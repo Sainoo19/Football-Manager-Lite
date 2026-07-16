@@ -261,7 +261,7 @@ public partial class MatchCenter : Control
         statsRow.AddChild(_homeStatsLabel);
         var names = new Label
         {
-            Text = "Kiểm soát bóng\nCú sút\nTrúng đích\nPhạt góc\nPhạm lỗi\nThẻ vàng",
+            Text = "Kiểm soát bóng\nCú sút\nTrúng đích\nPhạt góc\nPhạm lỗi\nThẻ vàng\nThẻ đỏ",
             HorizontalAlignment = HorizontalAlignment.Center
         };
         names.AddThemeColorOverride("font_color", MutedColor);
@@ -448,8 +448,8 @@ public partial class MatchCenter : Control
     {
         if (simulation is null)
         {
-            _homeStatsLabel.Text = "50%\n0\n0\n0\n0\n0";
-            _awayStatsLabel.Text = "50%\n0\n0\n0\n0\n0";
+            _homeStatsLabel.Text = "50%\n0\n0\n0\n0\n0\n0";
+            _awayStatsLabel.Text = "50%\n0\n0\n0\n0\n0\n0";
             return;
         }
         _homeStatsLabel.Text = StatsText(simulation.home);
@@ -463,7 +463,7 @@ public partial class MatchCenter : Control
     }
 
     private string StatsText(MatchTeamState state) =>
-        $"{simulation!.get_possession(state)}%\n{state.stats["shots"].AsInt32()}\n{state.stats["shots_on_target"].AsInt32()}\n{state.stats["corners"].AsInt32()}\n{state.stats["fouls"].AsInt32()}\n{state.stats["yellow_cards"].AsInt32()}";
+        $"{simulation!.get_possession(state)}%\n{state.stats["shots"].AsInt32()}\n{state.stats["shots_on_target"].AsInt32()}\n{state.stats["corners"].AsInt32()}\n{state.stats["fouls"].AsInt32()}\n{state.stats["yellow_cards"].AsInt32()}\n{state.stats["red_cards"].AsInt32()}";
 
     private void RefreshSubstitutionOptions()
     {
@@ -652,7 +652,7 @@ public partial class MatchCenter : Control
     {
         var label = new Label
         {
-            Text = "50%\n0\n0\n0\n0\n0",
+            Text = "50%\n0\n0\n0\n0\n0\n0",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             HorizontalAlignment = alignment
         };
@@ -684,6 +684,7 @@ public partial class MatchCenter : Control
         {
             "goal" => AccentColor,
             "yellow_card" => new Color("f0d36c"),
+            "red_card" => new Color("ff4d5f"),
             "half_time" or "full_time" => new Color("62a8ff"),
             "substitution" or "tactic" => new Color("bb8cff"),
             _ => MutedColor

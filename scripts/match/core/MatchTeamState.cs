@@ -32,6 +32,7 @@ public partial class MatchTeamState : RefCounted
             { "corners", 0 },
             { "fouls", 0 },
             { "yellow_cards", 0 },
+            { "red_cards", 0 },
             { "possession_ticks", 0 }
         };
         return this;
@@ -56,6 +57,17 @@ public partial class MatchTeamState : RefCounted
         squad.substitute_ids.Remove(incomingId);
         squad.starter_slots[slotId] = incomingId;
         substitutions_used++;
+        return true;
+    }
+
+    public bool send_off(StringName playerId)
+    {
+        if (!squad.starter_ids.Contains(playerId))
+            return false;
+        StringName slotId = squad.get_slot_for_player(playerId);
+        squad.starter_ids.Remove(playerId);
+        if (slotId != new StringName())
+            squad.starter_slots.Remove(slotId);
         return true;
     }
 

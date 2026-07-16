@@ -46,7 +46,8 @@ public partial class FootballMatchSimulation : RefCounted
         MatchTeamState defending = attacking == home ? away : home;
         if (!use_live_pitch_events)
             SimulateAttack(attacking, defending, minuteEvents);
-        SimulateFoul(minuteEvents);
+        if (!use_live_pitch_events)
+            SimulateFoul(minuteEvents);
 
         if (current_minute is 60 or 72 or 80)
             SimulateAiSubstitution(away, minuteEvents);
@@ -195,13 +196,18 @@ public partial class FootballMatchSimulation : RefCounted
                     attacking.team.id, shooterId);
                 break;
             case "saved":
+            case "parried":
+            case "parried_corner":
                 IncrementStat(attacking, "shots_on_target");
                 matchEvent = new FootballMatchEvent().setup(
                     current_minute, "shot_on_target",
-                    $"{shooterName} dứt điểm trúng đích, {goalkeeper?.display_name ?? "thủ môn"} cản phá.",
+                    outcome == "saved"
+                        ? $"{shooterName} dứt điểm trúng đích, {goalkeeper?.display_name ?? "thủ môn"} bắt gọn."
+                        : $"{shooterName} dứt điểm trúng đích, {goalkeeper?.display_name ?? "thủ môn"} đẩy bóng ra.",
                     attacking.team.id, shooterId);
                 break;
             case "blocked":
+            case "blocked_corner":
                 matchEvent = new FootballMatchEvent().setup(
                     current_minute, "shot_blocked",
                     $"{shooterName} dứt điểm nhưng {blocker?.display_name ?? "hậu vệ"} đã chắn bóng.",
@@ -214,6 +220,82 @@ public partial class FootballMatchSimulation : RefCounted
                     attacking.team.id, shooterId);
                 break;
         }
+        Record(matchEvent);
+        return matchEvent;
+    }
+
+    public FootballMatchEvent? register_live_foul(
+        StringName foulingTeamId,
+        StringName offenderId,
+        StringName victimId,
+        StringName card)
+    {
+        if (!use_live_pitch_events || is_finished)
+            return null;
+        MatchTeamState? fouling = get_state(foulingTeamId);
+        if (fouling is null)
+            return null;
+        MatchTeamState victimState = fouling == home ? away : home;
+        FootballPlayer? offender = fouling.team.get_player(offenderId);
+        FootballPlayer? victim = victimState.team.get_player(victimId);
+        IncrementStat(fouling, "fouls");
+
+        StringName eventType = "foul";
+        string suffix = "";
+        if (card == "red")
+        {
+            IncrementStat(fouling, "red_cards");
+            fouling.send_off(offenderId);
+            eventType = "red_card";
+            suffix = " Trọng tài rút thẻ đỏ trực tiếp!";
+        }
+        else if (card == "yellow")
+        {
+            IncrementStat(fouling, "yellow_cards");
+            eventType = "yellow_card";
+            suffix = " Trọng tài rút thẻ vàng.";
+        }
+
+        var matchEvent = new FootballMatchEvent().setup(
+            current_minute,
+            eventType,
+            $"{offender?.display_name ?? "Một cầu thủ"} phạm lỗi với {victim?.display_name ?? "đối phương"}.{suffix}",
+            fouling.team.id,
+            offenderId);
+        Record(matchEvent);
+        return matchEvent;
+    }
+
+    public FootballMatchEvent? register_live_restart(StringName teamId, StringName restartType)
+    {
+        if (!use_live_pitch_events || is_finished)
+            return null;
+        MatchTeamState? state = get_state(teamId);
+        if (state is null)
+            return null;
+        string text;
+        StringName eventType = restartType;
+        switch (restartType.ToString())
+        {
+            case "corner":
+                IncrementStat(state, "corners");
+                text = $"{state.team.short_name} được hưởng phạt góc.";
+                break;
+            case "goal_kick":
+                text = $"{state.team.short_name} phát bóng lên.";
+                break;
+            case "free_kick":
+                text = $"{state.team.short_name} được hưởng đá phạt.";
+                break;
+            case "throw_in":
+                text = $"{state.team.short_name} được hưởng ném biên.";
+                break;
+            default:
+                eventType = "kickoff";
+                text = $"{state.team.short_name} giao bóng trở lại.";
+                break;
+        }
+        var matchEvent = new FootballMatchEvent().setup(current_minute, eventType, text, state.team.id);
         Record(matchEvent);
         return matchEvent;
     }

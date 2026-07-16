@@ -13,6 +13,7 @@ public partial class DotNetTestRunner : Node
         {
             TestSquadLimits();
             TestMatchSimulation();
+            TestLiveMatchRules();
             TestPitchMovement();
             TestUiIntegration();
             GD.Print("PASS: toàn bộ logic, giao diện, sân 2D và kiểm thử đang chạy bằng C#/.NET.");
@@ -74,6 +75,28 @@ public partial class DotNetTestRunner : Node
         GD.Print("PASS: mô phỏng 90 phút, thống kê, chiến thuật và thay người.");
     }
 
+    private static void TestLiveMatchRules()
+    {
+        Array<FootballTeam> teams = new SampleDataFactory().create_teams();
+        FootballMatchSimulation simulation = new FootballMatchSimulation().setup(teams[0], teams[1], 77);
+        simulation.use_live_pitch_events = true;
+        StringName yellowOffender = simulation.home.squad.starter_ids[1];
+        StringName redOffender = simulation.home.squad.starter_ids[2];
+        StringName victim = simulation.away.squad.starter_ids[1];
+        Check(simulation.register_live_foul(teams[0].id, yellowOffender, victim, "yellow")?.event_type == "yellow_card", "Phạm lỗi trực tiếp phải tạo thẻ vàng.");
+        Check(simulation.register_live_restart(teams[1].id, "corner")?.event_type == "corner", "Sân 2D phải đăng ký được phạt góc.");
+        Check(simulation.register_live_shot(teams[1].id, simulation.away.squad.starter_ids[8], "parried", simulation.home.squad.starter_ids[0]) is not null, "Thủ môn đẩy bóng phải được ghi nhận là cú sút trúng đích.");
+        Check(simulation.register_live_foul(teams[0].id, redOffender, victim, "red")?.event_type == "red_card", "Phạm lỗi ngăn cơ hội phải tạo thẻ đỏ.");
+        Check(simulation.home.stats["fouls"].AsInt32() == 2, "Thống kê phải nhận phạm lỗi từ sân 2D.");
+        Check(simulation.home.stats["yellow_cards"].AsInt32() == 1 && simulation.home.stats["red_cards"].AsInt32() == 1, "Thẻ vàng và đỏ phải được thống kê.");
+        Check(simulation.away.stats["corners"].AsInt32() == 1, "Phạt góc phải được cộng cho đúng đội.");
+        Check(simulation.home.squad.starter_ids.Count == 10, "Cầu thủ nhận thẻ đỏ phải rời sân.");
+        int liveFouls = simulation.home.stats["fouls"].AsInt32() + simulation.away.stats["fouls"].AsInt32();
+        for (int minute = 0; minute < 10; minute++) simulation.advance_minute();
+        Check(simulation.home.stats["fouls"].AsInt32() + simulation.away.stats["fouls"].AsInt32() == liveFouls, "Chế độ trực tiếp không được sinh phạm lỗi ngẫu nhiên ngoài sân 2D.");
+        GD.Print("PASS: phạm lỗi, thẻ đỏ, phạt góc và cú sút bật ra được đồng bộ từ sân 2D.");
+    }
+
     private void TestPitchMovement()
     {
         Array<FootballTeam> teams = new SampleDataFactory().create_teams();
@@ -98,12 +121,13 @@ public partial class DotNetTestRunner : Node
         Check(pitch.BallPosition.DistanceTo(initialBall) > 0.01f, "Bóng phải được chuyền hoặc dẫn theo pha bóng.");
         Check(simulation.last_possession_team_id != new StringName(), "Engine phải truyền đội kiểm soát bóng cho sân 2D.");
         Check(pitch.BallPosition.X is >= 0 and <= 1 && pitch.BallPosition.Y is >= 0 and <= 1, "Bóng phải nằm trong vùng mô phỏng.");
-        for (int step = 0; step < 180; step++)
+        for (int step = 0; step < 360; step++)
         {
             if (step % 5 == 0 && !simulation.is_finished)
                 pitch.AnimateMinute(simulation.advance_minute());
             pitch._Process(0.1);
         }
+        for (int settle = 0; settle < 12; settle++) pitch._Process(0.1);
         int resolvedActions = pitch.CompletedPasses + pitch.Dribbles + pitch.Interceptions;
         Check(resolvedActions >= 3, "Một pha sở hữu bóng phải tạo ra nhiều quyết định chuyền, dẫn hoặc tranh chấp.");
         Check(pitch.LastActionName != "Chuẩn bị giao bóng", "Sân 2D phải công bố hành động cầu thủ vừa lựa chọn.");

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Football Game Architecture"
+  short_description: "Giữ kiến trúc Godot C# rõ ràng, dễ mở rộng"
+  default_prompt: "Use $football-game-architecture to structure or refactor this Godot C# football game safely."
