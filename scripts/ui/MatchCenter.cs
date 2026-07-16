@@ -39,10 +39,29 @@ public partial class MatchCenter : Control
     private Button _substitutionButton = null!;
     private Label _substitutionStatusLabel = null!;
     private Label _substitutionPreviewLabel = null!;
-    private Timer _matchTimer = null!;
     private readonly LineupManager _lineupManager = new();
+    private readonly LiveMatchClock _matchClock = new();
 
     public override void _Ready() => BuildInterface();
+
+    public override void _Process(double delta)
+    {
+        if (simulation is null || simulation.is_finished || !_matchClock.IsRunning)
+        {
+            return;
+        }
+
+        int elapsedMinutes = _matchClock.Advance(delta);
+        for (int minute = 0; minute < elapsedMinutes && !simulation.is_finished; minute++)
+        {
+            OnMatchTick();
+        }
+
+        if (!simulation.is_finished)
+        {
+            _minuteLabel.Text = _matchClock.DisplayTime;
+        }
+    }
 
     public void Configure(Array<FootballTeam> allTeams, FootballTeam userTeam)
     {
@@ -61,7 +80,7 @@ public partial class MatchCenter : Control
 
     public void PauseMatch()
     {
-        _matchTimer?.Stop();
+        _matchClock.Pause();
         _pitchView?.SetPlaying(false);
         if (_playButton is not null && simulation is not null && !simulation.is_finished)
             _playButton.Text = "▶ Tiếp tục";
@@ -85,9 +104,6 @@ public partial class MatchCenter : Control
         body.AddChild(BuildEventPanel());
         body.AddChild(BuildControlPanel());
 
-        _matchTimer = new Timer { WaitTime = 0.28 };
-        _matchTimer.Timeout += OnMatchTick;
-        AddChild(_matchTimer);
         SetControlsEnabled(false);
 
         if (managed_team is not null)
@@ -248,8 +264,11 @@ public partial class MatchCenter : Control
         var speedRow = new HBoxContainer();
         speedRow.AddChild(CaptionLabel("Tốc độ", true));
         _speedOption = new OptionButton();
-        foreach (string label in new[] { "1×", "4×", "8×" }) _speedOption.AddItem(label);
-        _speedOption.Select(1);
+        foreach (string label in new[] { "Thời gian thực", "Nhanh", "Rất nhanh", "Siêu nhanh" })
+        {
+            _speedOption.AddItem(label);
+        }
+        _speedOption.Select(0);
         _speedOption.ItemSelected += OnSpeedSelected;
         speedRow.AddChild(_speedOption);
         box.AddChild(speedRow);
@@ -368,7 +387,8 @@ public partial class MatchCenter : Control
     public void PrepareNewMatch()
     {
         if (managed_team is null || opponents.Count == 0) return;
-        _matchTimer.Stop();
+        _matchClock.Reset();
+        _matchClock.SetSpeed((MatchPlaybackSpeed)_speedOption.Selected);
         FootballTeam opponent = opponents[_opponentOption.Selected];
         long seed = unchecked((long)Time.GetTicksMsec()) + managed_team.id.GetHashCode() + opponent.id.GetHashCode();
         simulation = new FootballMatchSimulation().setup(managed_team, opponent, seed);
@@ -392,16 +412,16 @@ public partial class MatchCenter : Control
     {
         if (simulation is null) PrepareNewMatch();
         if (simulation is null || simulation.is_finished) return;
-        if (_matchTimer.IsStopped())
+        if (!_matchClock.IsRunning)
         {
-            _matchTimer.Start();
+            _matchClock.Start();
             _pitchView.SetPlaying(true);
             _playButton.Text = "Ⅱ Tạm dừng";
-            _statusLabel.Text = "Đang thi đấu";
+            _statusLabel.Text = $"Đang thi đấu · {_speedOption.GetItemText(_speedOption.Selected)}";
         }
         else
         {
-            _matchTimer.Stop();
+            _matchClock.Pause();
             _pitchView.SetPlaying(false);
             _playButton.Text = "▶ Tiếp tục";
             _statusLabel.Text = "Đã tạm dừng";
@@ -421,7 +441,7 @@ public partial class MatchCenter : Control
     {
         if (simulation is null) PrepareNewMatch();
         if (simulation is null) return;
-        _matchTimer.Stop();
+        _matchClock.Pause();
         _pitchView.SetPlaying(false);
         simulation.use_live_pitch_events = false;
         Array<FootballMatchEvent> remaining = simulation.simulate_to_end();
@@ -434,10 +454,10 @@ public partial class MatchCenter : Control
     {
         if (simulation is null) return;
         _scoreLabel.Text = simulation.score_text();
-        _minuteLabel.Text = simulation.is_finished ? "HẾT TRẬN" : $"{simulation.current_minute}'";
+        _minuteLabel.Text = simulation.is_finished ? "HẾT TRẬN" : _matchClock.DisplayTime;
         UpdateStatsLabels();
         if (!simulation.is_finished) return;
-        _matchTimer.Stop();
+        _matchClock.Pause();
         _pitchView.SetPlaying(false);
         _playButton.Text = "Đã kết thúc";
         _statusLabel.Text = "Trận đấu kết thúc";
@@ -572,8 +592,11 @@ public partial class MatchCenter : Control
 
     private void OnSpeedSelected(long index)
     {
-        double[] speeds = { 1.0, 4.0, 8.0 };
-        _matchTimer.WaitTime = 0.28 / speeds[(int)index];
+        _matchClock.SetSpeed((MatchPlaybackSpeed)index);
+        if (_matchClock.IsRunning)
+        {
+            _statusLabel.Text = $"Đang thi đấu · {_speedOption.GetItemText((int)index)}";
+        }
     }
 
     private void OnOpponentSelected(long index)

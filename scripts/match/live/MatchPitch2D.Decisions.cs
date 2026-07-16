@@ -28,12 +28,21 @@ public partial class MatchPitch2D
 
         FootballPlayer? owner = GetPlayer(ownerId);
         bool underPressure = pressureDistance < 0.105f;
+        if (ShouldClearBall(ownerId, underPressure))
+        {
+            StartClearance(ownerId);
+            return;
+        }
         if (Simulation.use_live_pitch_events && ShouldShoot(ownerId, pressureDistance))
         {
             StartLiveShot(ownerId, pressureDistance);
             return;
         }
-        if (_attackProgress > 0.62f && _decisionsSinceShot >= 9 && _primaryRunnerId != new StringName() && ownerId != _primaryRunnerId)
+        if (_attackProgress > 0.62f &&
+            _decisionsSinceShot >= 9 &&
+            _primaryRunnerId != new StringName() &&
+            ownerId != _primaryRunnerId &&
+            !IsCurrentlyOffside(_primaryRunnerId))
         {
             StartPass(_primaryRunnerId, BallActionKind.ThroughBall);
             return;
@@ -41,7 +50,9 @@ public partial class MatchPitch2D
         bool widePlayer = _playerRoles[ownerId] is "LB" or "RB" or "LW" or "RW";
         if (_attackProgress > 0.68f && widePlayer)
         {
-            StringName receiver = _primaryRunnerId != new StringName() ? _primaryRunnerId : ChoosePassTarget(false);
+            StringName receiver = _primaryRunnerId != new StringName() && !IsCurrentlyOffside(_primaryRunnerId)
+                ? _primaryRunnerId
+                : ChoosePassTarget(false);
             StartPass(receiver, BallActionKind.Cross);
             return;
         }
@@ -67,6 +78,34 @@ public partial class MatchPitch2D
             ? BallActionKind.ThroughBall
             : BallActionKind.Pass;
         StartPass(target, kind);
+    }
+
+    private bool ShouldClearBall(StringName ownerId, bool underPressure)
+    {
+        string role = _playerRoles[ownerId];
+        bool defensiveRole = role is "GK" or "CB" or "LB" or "RB" or "DM";
+        if (!defensiveRole || _attackProgress > 0.40f)
+        {
+            return false;
+        }
+
+        float clearanceIntent = DecisionRoll(ownerId, _pressingPlayerId, _decisionSerial + 307);
+        float threshold = underPressure ? 0.62f : role == "GK" ? 0.34f : 0.18f;
+        return clearanceIntent < threshold;
+    }
+
+    private void StartClearance(StringName playerId)
+    {
+        Vector2 start = CurrentPositions[playerId];
+        float direction = AttackDirection(_playerTeams[playerId]);
+        float distance = Mathf.Lerp(0.28f, 0.46f, DecisionRoll(playerId, _pressingPlayerId, _decisionSerial + 311));
+        float targetLane = Mathf.Lerp(0.16f, 0.84f, DecisionRoll(playerId, _activeTeamId, _decisionSerial + 313));
+        Vector2 destination = ClampToPitch(new Vector2(start.X + direction * distance, targetLane));
+        float flightDistance = FootballPitchDimensions.DistanceMeters(start, destination);
+        float duration = Mathf.Clamp(flightDistance / 30f, 0.55f, 1.35f);
+        Clearances++;
+        StartBallAction(destination, duration, 0.075f, new StringName(), BallActionKind.Clearance);
+        SetAction($"{PlayerName(playerId)} phá bóng lên khoảng trống");
     }
 
     private void StartDribble(StringName ownerId, bool escapingPressure)
@@ -102,11 +141,13 @@ public partial class MatchPitch2D
     {
         if (Simulation is null)
             return;
-        bool homeAttack = _playerTeams[shooterId] == Simulation.home.team.id;
-        StringName defendingTeamId = homeAttack ? Simulation.away.team.id : Simulation.home.team.id;
+        StringName shootingTeamId = _playerTeams[shooterId];
+        bool shootingHome = shootingTeamId == Simulation.home.team.id;
+        StringName defendingTeamId = shootingHome ? Simulation.away.team.id : Simulation.home.team.id;
         StringName goalkeeperId = ChooseGoalkeeper(defendingTeamId);
         Vector2 shooterPosition = CurrentPositions[shooterId];
-        float goalX = homeAttack ? 0.006f : 0.994f;
+        float attackDirection = AttackDirection(shootingTeamId);
+        float goalX = AttackingGoalX(shootingTeamId);
         float targetY = 0.42f + DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 101) * 0.16f;
         Vector2 goalTarget = new(goalX, targetY);
         FootballPlayer? shooter = GetPlayer(shooterId);
@@ -132,7 +173,7 @@ public partial class MatchPitch2D
             outcome = deflectsForCorner ? "blocked_corner" : "blocked";
             destination = deflectsForCorner
                 ? new Vector2(goalX, CurrentPositions[blockerId].Y < 0.5f ? 0.03f : 0.97f)
-                : CurrentPositions[blockerId] + new Vector2(homeAttack ? 0.055f : -0.055f, 0.035f);
+                : CurrentPositions[blockerId] + new Vector2(attackDirection * 0.055f, 0.035f);
             nextOwner = new StringName();
         }
         else
@@ -175,7 +216,9 @@ public partial class MatchPitch2D
                         ? CurrentPositions.GetValueOrDefault(goalkeeperId, goalTarget)
                         : parriesForCorner
                             ? new Vector2(goalX, targetY < 0.5f ? 0.03f : 0.97f)
-                            : new Vector2(homeAttack ? 0.15f : 0.85f, Mathf.Clamp(targetY + (targetY < 0.5f ? 0.13f : -0.13f), 0.16f, 0.84f));
+                            : new Vector2(
+                                attackDirection < 0f ? 0.15f : 0.85f,
+                                Mathf.Clamp(targetY + (targetY < 0.5f ? 0.13f : -0.13f), 0.16f, 0.84f));
                     nextOwner = holdsBall ? goalkeeperId : new StringName();
                 }
             }
@@ -215,8 +258,7 @@ public partial class MatchPitch2D
         _ballOwnerId = defenderId;
         _activeTeamId = _playerTeams[defenderId];
         Simulation!.set_live_possession(_activeTeamId);
-        bool homeRecovery = _activeTeamId == Simulation.home.team.id;
-        _attackProgress = Mathf.Clamp(homeRecovery ? 1f - BallPosition.X : BallPosition.X, 0.16f, 0.62f);
+        _attackProgress = Mathf.Clamp(AttackProgress(_activeTeamId, BallPosition), 0.16f, 0.62f);
         _phaseLane = CurrentPositions[defenderId].Y;
         Interceptions++;
         SelectPhasePlayers();
@@ -258,32 +300,62 @@ public partial class MatchPitch2D
         if (Simulation is null)
             return new StringName();
         if (_ballOwnerId == new StringName() || !CurrentPositions.ContainsKey(_ballOwnerId))
-            return ChooseOwner(_activeTeamId, _attackProgress > 0.55f);
+            return new StringName();
 
-        bool homeAttack = _activeTeamId == Simulation.home.team.id;
-        float direction = homeAttack ? -1f : 1f;
+        float direction = AttackDirection(_activeTeamId);
         Vector2 owner = CurrentPositions[_ballOwnerId];
+        int ownerVision = GetPlayer(_ballOwnerId)?.vision ?? 50;
         StringName bestId = new();
         float bestScore = float.NegativeInfinity;
         foreach (StringName candidateId in CurrentPositions.Keys)
         {
             if (candidateId == _ballOwnerId || _playerTeams[candidateId] != _activeTeamId || _playerRoles[candidateId] == "GK")
                 continue;
+            bool candidateIsOffside = IsCurrentlyOffside(candidateId);
             Vector2 candidate = TargetPositions.GetValueOrDefault(candidateId, CurrentPositions[candidateId]);
             float distance = owner.DistanceTo(candidate);
             if (distance > 0.48f || distance < 0.045f)
                 continue;
             float forwardGain = direction * (candidate.X - owner.X);
             float laneRisk = PassingLaneRisk(owner, candidate, _activeTeamId);
+            float receivingPressure = SpaceEvaluator.OpponentPressure(
+                candidate,
+                _activeTeamId,
+                CurrentPositions,
+                _playerTeams);
             float forwardWeight = preferSafe ? 1.35f : 2.7f;
             float score = forwardGain * forwardWeight - distance * 0.42f -
-                          Math.Abs(candidate.Y - _phaseLane) * 0.12f - laneRisk * (preferSafe ? 1.45f : 0.82f);
-            if (candidateId == _primaryRunnerId) score += _attackProgress > 0.52f ? 0.28f : 0.06f;
-            if (candidateId == _secondaryRunnerId) score += 0.09f;
+                          receivingPressure * (preferSafe ? 0.72f : 0.46f) -
+                          laneRisk * (preferSafe ? 1.45f : 0.82f);
+            if (candidateIsOffside)
+            {
+                score -= Mathf.Lerp(0.62f, 1.25f, ownerVision / 99f);
+            }
+            if (_playerIntents.TryGetValue(candidateId, out PlayerIntent? intent))
+            {
+                score += intent.Kind switch
+                {
+                    PlayerIntentKind.ReceivePass => 0.34f,
+                    PlayerIntentKind.RunIntoSpace => _attackProgress > 0.52f ? 0.28f : 0.10f,
+                    PlayerIntentKind.SupportBall => preferSafe ? 0.24f : 0.12f,
+                    _ => 0f
+                };
+            }
             if (score <= bestScore) continue;
             bestScore = score;
             bestId = candidateId;
         }
-        return bestId != new StringName() ? bestId : ChooseOwner(_activeTeamId, false);
+        return bestId;
+    }
+
+    private bool IsCurrentlyOffside(StringName playerId)
+    {
+        return _offsideRule.IsOffside(
+            playerId,
+            _activeTeamId,
+            BallPosition,
+            AttackDirection(_activeTeamId),
+            CurrentPositions,
+            _playerTeams);
     }
 }

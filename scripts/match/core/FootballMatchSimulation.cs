@@ -266,6 +266,24 @@ public partial class FootballMatchSimulation : RefCounted
         return matchEvent;
     }
 
+    public FootballMatchEvent? RegisterLiveOffside(StringName attackingTeamId, StringName playerId)
+    {
+        if (!use_live_pitch_events || is_finished)
+            return null;
+        MatchTeamState? attacking = get_state(attackingTeamId);
+        if (attacking is null)
+            return null;
+        FootballPlayer? player = attacking.team.get_player(playerId);
+        var matchEvent = new FootballMatchEvent().setup(
+            current_minute,
+            "offside",
+            $"{player?.display_name ?? "Một cầu thủ"} rơi vào vị trí việt vị.",
+            attackingTeamId,
+            playerId);
+        Record(matchEvent);
+        return matchEvent;
+    }
+
     public FootballMatchEvent? register_live_restart(StringName teamId, StringName restartType)
     {
         if (!use_live_pitch_events || is_finished)
