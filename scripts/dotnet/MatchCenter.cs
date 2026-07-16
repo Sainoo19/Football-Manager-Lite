@@ -24,6 +24,7 @@ public partial class MatchCenter : Control
     private Label _scoreLabel = null!;
     private Label _minuteLabel = null!;
     private Label _statusLabel = null!;
+    private Label _pitchActionLabel = null!;
     private MatchPitch2D _pitchView = null!;
     private ScrollContainer _eventScroll = null!;
     private VBoxContainer _eventContainer = null!;
@@ -177,10 +178,19 @@ public partial class MatchCenter : Control
         var pitchHeader = new HBoxContainer();
         pitchHeader.AddThemeConstantOverride("separation", 14);
         box.AddChild(pitchHeader);
-        var caption = new Label { Text = "MÔ PHỎNG 2D", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        var caption = new Label { Text = "MÔ PHỎNG 2D" };
         caption.AddThemeFontSizeOverride("font_size", 11);
         caption.AddThemeColorOverride("font_color", MutedColor);
         pitchHeader.AddChild(caption);
+        _pitchActionLabel = new Label
+        {
+            Text = "• Chờ bắt đầu pha bóng",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        _pitchActionLabel.AddThemeFontSizeOverride("font_size", 11);
+        _pitchActionLabel.AddThemeColorOverride("font_color", new Color("f0d36c"));
+        pitchHeader.AddChild(_pitchActionLabel);
         var homeLegend = new Label { Text = "● Đội bạn" };
         homeLegend.AddThemeColorOverride("font_color", new Color("4f8cff"));
         pitchHeader.AddChild(homeLegend);
@@ -189,6 +199,7 @@ public partial class MatchCenter : Control
         pitchHeader.AddChild(awayLegend);
 
         _pitchView = new MatchPitch2D { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _pitchView.ActionChanged += description => _pitchActionLabel.Text = $"• {description}";
         box.AddChild(_pitchView);
         _eventScroll = new ScrollContainer
         {

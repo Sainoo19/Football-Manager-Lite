@@ -1,3 +1,4 @@
+using System;
 using Godot;
 
 [GlobalClass]
@@ -11,6 +12,14 @@ public partial class FootballPlayer : Resource
     [Export(PropertyHint.Range, "1,99")] public int overall { get; set; } = 50;
     [Export(PropertyHint.Range, "0,100")] public int fitness { get; set; } = 100;
     [Export(PropertyHint.Range, "0,100")] public int form { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int pace { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int passing { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int vision { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int dribbling { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int tackling { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int finishing { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int positioning { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int goalkeeping { get; set; } = 10;
 
     public FootballPlayer setup(
         StringName playerId,
@@ -26,6 +35,22 @@ public partial class FootballPlayer : Resource
         age = playerAge;
         nationality = playerNationality;
         overall = Mathf.Clamp(playerOverall, 1, 99);
+        ApplyRoleAttributes();
         return this;
     }
+
+    private void ApplyRoleAttributes()
+    {
+        int variation = Math.Abs(id.GetHashCode()) % 9 - 4;
+        pace = Attribute(overall + variation);
+        passing = Attribute(overall + (position is "CM" or "AM" or "DM" ? 5 : 0) - (position == "GK" ? 12 : 0));
+        vision = Attribute(overall + (position is "CM" or "AM" ? 7 : position == "DM" ? 3 : -2));
+        dribbling = Attribute(overall + (position is "LW" or "RW" or "AM" ? 6 : position is "CB" or "GK" ? -9 : 0));
+        tackling = Attribute(overall + (position is "CB" or "LB" or "RB" or "DM" ? 7 : position is "ST" or "LW" or "RW" ? -10 : 0));
+        finishing = Attribute(overall + (position == "ST" ? 8 : position is "LW" or "RW" or "AM" ? 3 : -12));
+        positioning = Attribute(overall + (position is "CB" or "DM" or "ST" ? 5 : 0));
+        goalkeeping = position == "GK" ? Attribute(overall + 5) : Attribute(8 + variation);
+    }
+
+    private static int Attribute(int value) => Mathf.Clamp(value, 1, 99);
 }

@@ -7,6 +7,18 @@ using Godot.Collections;
 [GlobalClass]
 public partial class MatchPitch2D : Control
 {
+    [Signal] public delegate void ActionChangedEventHandler(string description);
+
+    private enum BallActionKind
+    {
+        None,
+        Pass,
+        ThroughBall,
+        Cross,
+        Shot,
+        Interception
+    }
+
     private static readonly Color HomeColor = new("4f8cff");
     private static readonly Color AwayColor = new("ff5d73");
     private static readonly Color BallColor = new("f7fbff");
@@ -30,6 +42,18 @@ public partial class MatchPitch2D : Control
     private StringName _primaryRunnerId = new();
     private StringName _secondaryRunnerId = new();
     private StringName _pressingPlayerId = new();
+    private BallActionKind _ballActionKind;
+    private StringName _actionSourceId = new();
+    private StringName _actionSourceTeamId = new();
+    private bool _interceptionChecked;
+    private float _nextDecisionTime;
+    private int _decisionSerial;
+
+    public string LastActionName { get; private set; } = "Chuẩn bị giao bóng";
+    public int CompletedPasses { get; private set; }
+    public int Interceptions { get; private set; }
+    public int Dribbles { get; private set; }
+    public StringName CurrentBallOwnerId => _ballOwnerId;
 
     private bool _ballActionActive;
     private Vector2 _ballActionFrom = new(0.5f, 0.5f);
@@ -60,6 +84,13 @@ public partial class MatchPitch2D : Control
         _attackProgress = 0.22f;
         _phaseLane = 0.5f;
         _phaseSerial = 0;
+        _decisionSerial = 0;
+        _nextDecisionTime = 0.35f;
+        _ballActionKind = BallActionKind.None;
+        CompletedPasses = 0;
+        Interceptions = 0;
+        Dribbles = 0;
+        SetAction("Chuẩn bị giao bóng");
         BallPosition = new Vector2(0.5f, 0.5f);
         _activeTeamId = simulation.home.team.id;
         SyncLineups(true);
@@ -95,8 +126,8 @@ public partial class MatchPitch2D : Control
 
         if (focusEvent is not null)
             AnimateEvent(focusEvent);
-        else if (!_ballActionActive && _visualTime - _lastPassTime >= 0.45f)
-            StartPass(ChoosePassTarget());
+        else if (!_ballActionActive && _ballOwnerId != new StringName() && _visualTime >= _nextDecisionTime)
+            DecideNextAction();
         QueueRedraw();
     }
 
@@ -117,8 +148,8 @@ public partial class MatchPitch2D : Control
             }
         }
         UpdateBall(delta);
-        if (!_ballActionActive && _ballOwnerId != new StringName() && _visualTime - _lastPassTime >= 0.82f)
-            StartPass(ChoosePassTarget());
+        if (!_ballActionActive && _ballOwnerId != new StringName() && _visualTime >= _nextDecisionTime)
+            DecideNextAction();
         QueueRedraw();
     }
 
@@ -316,11 +347,25 @@ public partial class MatchPitch2D : Control
             float eased = progress * progress * (3 - 2 * progress);
             BallPosition = _ballActionFrom.Lerp(_ballActionTo, eased);
             BallPosition = new Vector2(BallPosition.X, BallPosition.Y - Mathf.Sin(progress * Mathf.Pi) * _ballActionArc);
+            if (!_interceptionChecked && progress >= 0.44f && _ballActionKind is BallActionKind.Pass or BallActionKind.ThroughBall or BallActionKind.Cross)
+            {
+                _interceptionChecked = true;
+                TryInterceptMovingBall();
+            }
             if (progress >= 1)
             {
                 _ballActionActive = false;
                 _ballOwnerId = _ballNextOwnerId;
                 _ballNextOwnerId = new StringName();
+                if (_ballActionKind is BallActionKind.Pass or BallActionKind.ThroughBall or BallActionKind.Cross)
+                    CompletedPasses++;
+                if (_ballActionKind == BallActionKind.Interception)
+                {
+                    Interceptions++;
+                    SetAction($"{PlayerName(_ballOwnerId)} cắt được đường bóng");
+                }
+                _ballActionKind = BallActionKind.None;
+                _nextDecisionTime = _visualTime + 0.32f;
             }
             return;
         }
@@ -342,7 +387,8 @@ public partial class MatchPitch2D : Control
         {
             bool homeAttack = matchEvent.team_id == Simulation.home.team.id;
             StringName defending = homeAttack ? Simulation.away.team.id : Simulation.home.team.id;
-            StartBallAction(new Vector2(homeAttack ? 0.006f : 0.994f, 0.5f), 0.72f, 0.045f, ChooseGoalkeeper(defending));
+            StartBallAction(new Vector2(homeAttack ? 0.006f : 0.994f, 0.5f), 0.72f, 0.045f, ChooseGoalkeeper(defending), BallActionKind.Shot);
+            SetAction($"{PlayerName(matchEvent.player_id)} dứt điểm");
             return;
         }
         if (type == "corner")
@@ -352,12 +398,13 @@ public partial class MatchPitch2D : Control
             BallPosition = corner;
             Vector2 crossTarget = new(homeCorner ? 0.12f : 0.88f, 0.5f);
             StringName receiver = _primaryRunnerId != new StringName() ? _primaryRunnerId : ChooseOwner(matchEvent.team_id, true);
-            StartBallAction(crossTarget, 0.68f, 0.055f, receiver);
+            StartBallAction(crossTarget, 0.68f, 0.055f, receiver, BallActionKind.Cross);
+            SetAction("Quả tạt từ chấm phạt góc");
             return;
         }
         if (type is "half_time" or "full_time")
         {
-            StartBallAction(new Vector2(0.5f, 0.5f), 0.5f, 0, new StringName());
+            StartBallAction(new Vector2(0.5f, 0.5f), 0.5f, 0, new StringName(), BallActionKind.None);
             return;
         }
         if (type is "substitution" or "tactic")
@@ -370,7 +417,7 @@ public partial class MatchPitch2D : Control
             StartPass(ChoosePassTarget());
     }
 
-    private void StartPass(StringName ownerId)
+    private void StartPass(StringName ownerId, BallActionKind requestedKind = BallActionKind.Pass)
     {
         if (ownerId == new StringName() || !CurrentPositions.TryGetValue(ownerId, out Vector2 current))
             return;
@@ -378,12 +425,31 @@ public partial class MatchPitch2D : Control
         float lead = ownerId == _primaryRunnerId ? 0.78f : ownerId == _secondaryRunnerId ? 0.58f : 0.34f;
         Vector2 target = current.Lerp(runTarget, lead);
         float distance = BallPosition.DistanceTo(target);
+        BallActionKind kind = requestedKind;
+        if (kind == BallActionKind.Pass && ownerId == _primaryRunnerId && distance > 0.16f)
+            kind = BallActionKind.ThroughBall;
         _lastPassTime = _visualTime;
-        StartBallAction(target, Mathf.Clamp(0.28f + distance * 0.72f, 0.34f, 0.68f), 0.018f + distance * 0.035f, ownerId);
+        StartBallAction(target, Mathf.Clamp(0.28f + distance * 0.72f, 0.34f, 0.68f), 0.018f + distance * 0.035f, ownerId, kind);
+        string action = kind switch
+        {
+            BallActionKind.ThroughBall => "chọc khe cho",
+            BallActionKind.Cross => "tạt bóng tới",
+            _ => "chuyền cho"
+        };
+        SetAction($"{PlayerName(_actionSourceId)} {action} {PlayerName(ownerId)}");
     }
 
-    private void StartBallAction(Vector2 destination, float duration, float arc, StringName nextOwner)
+    private void StartBallAction(
+        Vector2 destination,
+        float duration,
+        float arc,
+        StringName nextOwner,
+        BallActionKind kind = BallActionKind.Pass)
     {
+        _actionSourceId = _ballOwnerId;
+        _actionSourceTeamId = _actionSourceId != new StringName() && _playerTeams.ContainsKey(_actionSourceId)
+            ? _playerTeams[_actionSourceId]
+            : _activeTeamId;
         _ballActionActive = true;
         _ballActionFrom = BallPosition;
         _ballActionTo = destination;
@@ -391,6 +457,8 @@ public partial class MatchPitch2D : Control
         _ballActionDuration = duration;
         _ballActionArc = arc;
         _ballNextOwnerId = nextOwner;
+        _ballActionKind = kind;
+        _interceptionChecked = kind is BallActionKind.None or BallActionKind.Shot;
         _ballOwnerId = new StringName();
     }
 
@@ -424,7 +492,196 @@ public partial class MatchPitch2D : Control
         return ChooseOwner(teamId, false);
     }
 
-    private StringName ChoosePassTarget()
+    private void DecideNextAction()
+    {
+        if (Simulation is null || _ballOwnerId == new StringName() || !CurrentPositions.ContainsKey(_ballOwnerId))
+            return;
+        _decisionSerial++;
+        StringName ownerId = _ballOwnerId;
+        if (_playerTeams[ownerId] != _activeTeamId)
+        {
+            _activeTeamId = _playerTeams[ownerId];
+            SelectPhasePlayers();
+        }
+
+        StringName nearestOpponent = NearestOpponent(ownerId);
+        float pressureDistance = nearestOpponent != new StringName()
+            ? CurrentPositions[ownerId].DistanceTo(CurrentPositions[nearestOpponent])
+            : 1f;
+        if (pressureDistance < 0.068f && TryResolveTackle(ownerId, nearestOpponent, pressureDistance))
+            return;
+
+        FootballPlayer? owner = GetPlayer(ownerId);
+        bool underPressure = pressureDistance < 0.105f;
+        bool widePlayer = _playerRoles[ownerId] is "LB" or "RB" or "LW" or "RW";
+        if (_attackProgress > 0.68f && widePlayer)
+        {
+            StringName receiver = _primaryRunnerId != new StringName() ? _primaryRunnerId : ChoosePassTarget(false);
+            StartPass(receiver, BallActionKind.Cross);
+            return;
+        }
+
+        float dribbleIntent = DecisionRoll(ownerId, nearestOpponent, _decisionSerial);
+        int dribbling = owner?.dribbling ?? 50;
+        if ((!underPressure && dribbling >= 67 && dribbleIntent < 0.34f) ||
+            (underPressure && dribbling >= 75 && dribbleIntent < 0.22f))
+        {
+            StartDribble(ownerId, underPressure);
+            return;
+        }
+
+        StringName target = ChoosePassTarget(underPressure);
+        if (target == new StringName())
+        {
+            StartDribble(ownerId, underPressure);
+            return;
+        }
+
+        int creativeSkill = ((owner?.passing ?? 50) + (owner?.vision ?? 50)) / 2;
+        BallActionKind kind = target == _primaryRunnerId && creativeSkill >= 68 && !underPressure
+            ? BallActionKind.ThroughBall
+            : BallActionKind.Pass;
+        StartPass(target, kind);
+    }
+
+    private void StartDribble(StringName ownerId, bool escapingPressure)
+    {
+        FootballPlayer? player = GetPlayer(ownerId);
+        float quality = ((player?.dribbling ?? 50) + (player?.pace ?? 50)) / 198f;
+        _attackProgress = Mathf.Clamp(_attackProgress + Mathf.Lerp(0.035f, 0.075f, quality), 0.12f, 0.94f);
+        _phaseLane = Mathf.Lerp(_phaseLane, CurrentPositions[ownerId].Y, 0.55f);
+        Dribbles++;
+        _nextDecisionTime = _visualTime + (escapingPressure ? 0.48f : 0.62f);
+        SetAction(escapingPressure
+            ? $"{PlayerName(ownerId)} thoát pressing"
+            : $"{PlayerName(ownerId)} dẫn bóng lên phía trước");
+    }
+
+    private bool TryResolveTackle(StringName ownerId, StringName defenderId, float distance)
+    {
+        FootballPlayer? owner = GetPlayer(ownerId);
+        FootballPlayer? defender = GetPlayer(defenderId);
+        float tackleSkill = ((defender?.tackling ?? 50) + (defender?.positioning ?? 50)) * 0.5f;
+        float controlSkill = ((owner?.dribbling ?? 50) + (owner?.pace ?? 50)) * 0.5f;
+        float contactBonus = Mathf.Clamp((0.068f - distance) / 0.068f, 0, 1) * 0.28f;
+        float chance = Mathf.Clamp(0.22f + (tackleSkill - controlSkill) / 145f + contactBonus, 0.08f, 0.72f);
+        if (DecisionRoll(ownerId, defenderId, _decisionSerial + 41) >= chance)
+            return false;
+
+        _ballOwnerId = defenderId;
+        _activeTeamId = _playerTeams[defenderId];
+        bool homeRecovery = _activeTeamId == Simulation!.home.team.id;
+        _attackProgress = Mathf.Clamp(homeRecovery ? 1f - BallPosition.X : BallPosition.X, 0.16f, 0.62f);
+        _phaseLane = CurrentPositions[defenderId].Y;
+        Interceptions++;
+        SelectPhasePlayers();
+        _nextDecisionTime = _visualTime + 0.38f;
+        SetAction($"{PlayerName(defenderId)} đoạt bóng từ {PlayerName(ownerId)}");
+        return true;
+    }
+
+    private void TryInterceptMovingBall()
+    {
+        if (Simulation is null || _actionSourceTeamId == new StringName())
+            return;
+        var defenders = CurrentPositions.Keys
+            .Where(id => _playerTeams[id] != _actionSourceTeamId && _playerRoles[id] != "GK")
+            .OrderBy(id => CurrentPositions[id].DistanceSquaredTo(BallPosition))
+            .ToList();
+        if (defenders.Count == 0)
+            return;
+        StringName defenderId = defenders[0];
+        float distance = CurrentPositions[defenderId].DistanceTo(BallPosition);
+        float threshold = _ballActionKind switch
+        {
+            BallActionKind.Cross => 0.115f,
+            BallActionKind.ThroughBall => 0.095f,
+            _ => 0.075f
+        };
+        if (distance > threshold)
+            return;
+
+        FootballPlayer? passer = GetPlayer(_actionSourceId);
+        FootballPlayer? defender = GetPlayer(defenderId);
+        float passingSkill = ((passer?.passing ?? 50) + (passer?.vision ?? 50)) * 0.5f;
+        float defensiveSkill = ((defender?.tackling ?? 50) + (defender?.positioning ?? 50)) * 0.5f;
+        float laneBonus = (threshold - distance) / threshold * 0.38f;
+        float chance = Mathf.Clamp(0.12f + laneBonus + (defensiveSkill - passingSkill) / 190f, 0.06f, 0.68f);
+        if (DecisionRoll(_actionSourceId, defenderId, _decisionSerial + _phaseSerial * 13) >= chance)
+            return;
+
+        _ballActionFrom = BallPosition;
+        _ballActionTo = CurrentPositions[defenderId];
+        _ballActionElapsed = 0;
+        _ballActionDuration = 0.18f;
+        _ballActionArc = 0.004f;
+        _ballNextOwnerId = defenderId;
+        _ballActionKind = BallActionKind.Interception;
+        _activeTeamId = _playerTeams[defenderId];
+        bool homeRecovery = _activeTeamId == Simulation.home.team.id;
+        _attackProgress = Mathf.Clamp(homeRecovery ? 1f - BallPosition.X : BallPosition.X, 0.16f, 0.60f);
+        _phaseLane = CurrentPositions[defenderId].Y;
+        SelectPhasePlayers();
+    }
+
+    private StringName NearestOpponent(StringName playerId)
+    {
+        if (!CurrentPositions.TryGetValue(playerId, out Vector2 position))
+            return new StringName();
+        return CurrentPositions.Keys
+            .Where(id => _playerTeams[id] != _playerTeams[playerId] && _playerRoles[id] != "GK")
+            .OrderBy(id => CurrentPositions[id].DistanceSquaredTo(position))
+            .FirstOrDefault() ?? new StringName();
+    }
+
+    private float PassingLaneRisk(Vector2 from, Vector2 to, StringName passingTeamId)
+    {
+        float highestRisk = 0;
+        foreach (StringName playerId in CurrentPositions.Keys)
+        {
+            if (_playerTeams[playerId] == passingTeamId || _playerRoles[playerId] == "GK")
+                continue;
+            float distance = DistanceToSegment(CurrentPositions[playerId], from, to);
+            highestRisk = Mathf.Max(highestRisk, 1f - Mathf.Clamp(distance / 0.13f, 0, 1));
+        }
+        return highestRisk;
+    }
+
+    private FootballPlayer? GetPlayer(StringName playerId)
+    {
+        if (Simulation is null || playerId == new StringName())
+            return null;
+        return Simulation.home.team.get_player(playerId) ?? Simulation.away.team.get_player(playerId);
+    }
+
+    private string PlayerName(StringName playerId) => GetPlayer(playerId)?.display_name ?? "Một cầu thủ";
+
+    private void SetAction(string description)
+    {
+        LastActionName = description;
+        EmitSignal(SignalName.ActionChanged, description);
+    }
+
+    private static float DecisionRoll(StringName firstId, StringName secondId, int serial)
+    {
+        uint value = unchecked((uint)firstId.GetHashCode() * 2654435761u);
+        value ^= unchecked((uint)secondId.GetHashCode() * 2246822519u);
+        value ^= unchecked((uint)serial * 3266489917u);
+        value ^= value >> 16;
+        return (value & 0x00ffffff) / 16777215f;
+    }
+
+    private static float DistanceToSegment(Vector2 point, Vector2 start, Vector2 end)
+    {
+        Vector2 segment = end - start;
+        float lengthSquared = segment.LengthSquared();
+        if (lengthSquared <= 0.000001f)
+            return point.DistanceTo(start);
+        float progress = Mathf.Clamp((point - start).Dot(segment) / lengthSquared, 0, 1);
+        return point.DistanceTo(start + segment * progress);
+    }
+
+    private StringName ChoosePassTarget(bool preferSafe = false)
     {
         if (Simulation is null)
             return new StringName();
@@ -445,7 +702,10 @@ public partial class MatchPitch2D : Control
             if (distance > 0.48f || distance < 0.045f)
                 continue;
             float forwardGain = direction * (candidate.X - owner.X);
-            float score = forwardGain * 2.7f - distance * 0.42f - Math.Abs(candidate.Y - _phaseLane) * 0.12f;
+            float laneRisk = PassingLaneRisk(owner, candidate, _activeTeamId);
+            float forwardWeight = preferSafe ? 1.35f : 2.7f;
+            float score = forwardGain * forwardWeight - distance * 0.42f -
+                          Math.Abs(candidate.Y - _phaseLane) * 0.12f - laneRisk * (preferSafe ? 1.45f : 0.82f);
             if (candidateId == _primaryRunnerId) score += _attackProgress > 0.52f ? 0.28f : 0.06f;
             if (candidateId == _secondaryRunnerId) score += 0.09f;
             if (score <= bestScore) continue;

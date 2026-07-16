@@ -42,6 +42,7 @@ public partial class DotNetTestRunner : Node
         Check(squad.registered_count() == 23, "Danh sách trận phải có 23 cầu thủ.");
         Check(!squad.register_substitute(players[0].id), "Không được đăng ký dự bị thứ 13.");
         Check(squad.validate_against(players).Length == 0, "Danh sách tự chọn phải hợp lệ.");
+        Check(players.All(player => player.passing is >= 1 and <= 99 && player.tackling is >= 1 and <= 99), "Thuộc tính chuyên môn phải nằm trong thang 1-99.");
         foreach (FormationDefinition item in catalog.all()) Check(item.slots.Count == 11, "Mỗi sơ đồ phải có 11 vị trí.");
         GD.Print("PASS: quân số không giới hạn, danh sách trận 11 + 12.");
     }
@@ -95,8 +96,12 @@ public partial class DotNetTestRunner : Node
         Check(pitch.BallPosition.DistanceTo(initialBall) > 0.01f, "Bóng phải được chuyền hoặc dẫn theo pha bóng.");
         Check(simulation.last_possession_team_id != new StringName(), "Engine phải truyền đội kiểm soát bóng cho sân 2D.");
         Check(pitch.BallPosition.X is >= 0 and <= 1 && pitch.BallPosition.Y is >= 0 and <= 1, "Bóng phải nằm trong vùng mô phỏng.");
+        for (int step = 0; step < 120; step++) pitch._Process(0.1);
+        int resolvedActions = pitch.CompletedPasses + pitch.Dribbles + pitch.Interceptions;
+        Check(resolvedActions >= 3, "Một pha sở hữu bóng phải tạo ra nhiều quyết định chuyền, dẫn hoặc tranh chấp.");
+        Check(pitch.LastActionName != "Chuẩn bị giao bóng", "Sân 2D phải công bố hành động cầu thủ vừa lựa chọn.");
         pitch.QueueFree();
-        GD.Print("PASS: sân 2D có chuyền bóng, pressing, dịch chuyển khối và chạy chỗ phá tuyến.");
+        GD.Print("PASS: sân 2D có quyết định chuyền/dẫn, pressing, đánh chặn và chạy chỗ phá tuyến.");
     }
 
     private void TestUiIntegration()
