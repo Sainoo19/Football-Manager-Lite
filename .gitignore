@@ -1,0 +1,26 @@
+# Godot 4+ specific ignores
+.godot/
+!/.godot/extension_list.cfg
+!/.godot/global_script_class_cache.cfg
+!/.godot/uid_upgrade_tool.log
+!/.godot/editor_plugins.cfg
+
+# Android Studio
+/android/
+
+# C# and Mono specific ignores
+.mono/
+bin/
+obj/
+*.csproj.user
+
+# IDEs and Tools
+.vs/
+.vscode/
+.idea/
+*.sln.DotSettings.user
+*.suo
+*.user
+
+# macOS
+.DS_Store
