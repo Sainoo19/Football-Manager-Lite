@@ -8,6 +8,7 @@ using Godot.Collections;
 public partial class MatchPitch2D : Control
 {
     [Signal] public delegate void ActionChangedEventHandler(string description);
+    [Signal] public delegate void LiveMatchEventEventHandler(FootballMatchEvent matchEvent);
 
     private enum BallActionKind
     {
@@ -48,12 +49,17 @@ public partial class MatchPitch2D : Control
     private bool _interceptionChecked;
     private float _nextDecisionTime;
     private int _decisionSerial;
+    private StringName _pendingShotOutcome = new();
+    private StringName _pendingShotShooterId = new();
+    private StringName _pendingShotGoalkeeperId = new();
+    private StringName _pendingShotBlockerId = new();
 
     public string LastActionName { get; private set; } = "Chuẩn bị giao bóng";
     public int CompletedPasses { get; private set; }
     public int Interceptions { get; private set; }
     public int Dribbles { get; private set; }
     public StringName CurrentBallOwnerId => _ballOwnerId;
+    public bool IsPlaying { get; private set; }
 
     private bool _ballActionActive;
     private Vector2 _ballActionFrom = new(0.5f, 0.5f);
@@ -87,16 +93,29 @@ public partial class MatchPitch2D : Control
         _decisionSerial = 0;
         _nextDecisionTime = 0.35f;
         _ballActionKind = BallActionKind.None;
+        _pendingShotOutcome = new StringName();
+        _pendingShotShooterId = new StringName();
+        _pendingShotGoalkeeperId = new StringName();
+        _pendingShotBlockerId = new StringName();
         CompletedPasses = 0;
         Interceptions = 0;
         Dribbles = 0;
+        IsPlaying = false;
         SetAction("Chuẩn bị giao bóng");
         BallPosition = new Vector2(0.5f, 0.5f);
         _activeTeamId = simulation.home.team.id;
+        simulation.set_live_possession(_activeTeamId);
         SyncLineups(true);
         SelectPhasePlayers();
         _ballOwnerId = ChooseOwner(_activeTeamId, false);
         QueueRedraw();
+    }
+
+    public void SetPlaying(bool playing)
+    {
+        IsPlaying = playing && Simulation is not null && !Simulation.is_finished;
+        if (IsPlaying)
+            _nextDecisionTime = Mathf.Max(_nextDecisionTime, _visualTime + 0.15f);
     }
 
     public void AnimateMinute(Array<FootballMatchEvent> newEvents)
@@ -148,7 +167,7 @@ public partial class MatchPitch2D : Control
             }
         }
         UpdateBall(delta);
-        if (!_ballActionActive && _ballOwnerId != new StringName() && _visualTime >= _nextDecisionTime)
+        if (IsPlaying && !_ballActionActive && _ballOwnerId != new StringName() && _visualTime >= _nextDecisionTime)
             DecideNextAction();
         QueueRedraw();
     }
@@ -364,6 +383,8 @@ public partial class MatchPitch2D : Control
                     Interceptions++;
                     SetAction($"{PlayerName(_ballOwnerId)} cắt được đường bóng");
                 }
+                if (_ballActionKind == BallActionKind.Shot)
+                    CompleteLiveShot();
                 _ballActionKind = BallActionKind.None;
                 _nextDecisionTime = _visualTime + 0.32f;
             }
@@ -494,13 +515,14 @@ public partial class MatchPitch2D : Control
 
     private void DecideNextAction()
     {
-        if (Simulation is null || _ballOwnerId == new StringName() || !CurrentPositions.ContainsKey(_ballOwnerId))
+        if (Simulation is null || Simulation.is_finished || _ballOwnerId == new StringName() || !CurrentPositions.ContainsKey(_ballOwnerId))
             return;
         _decisionSerial++;
         StringName ownerId = _ballOwnerId;
         if (_playerTeams[ownerId] != _activeTeamId)
         {
             _activeTeamId = _playerTeams[ownerId];
+            Simulation.set_live_possession(_activeTeamId);
             SelectPhasePlayers();
         }
 
@@ -513,6 +535,11 @@ public partial class MatchPitch2D : Control
 
         FootballPlayer? owner = GetPlayer(ownerId);
         bool underPressure = pressureDistance < 0.105f;
+        if (Simulation.use_live_pitch_events && ShouldShoot(ownerId, pressureDistance))
+        {
+            StartLiveShot(ownerId, pressureDistance);
+            return;
+        }
         bool widePlayer = _playerRoles[ownerId] is "LB" or "RB" or "LW" or "RW";
         if (_attackProgress > 0.68f && widePlayer)
         {
@@ -557,6 +584,126 @@ public partial class MatchPitch2D : Control
             : $"{PlayerName(ownerId)} dẫn bóng lên phía trước");
     }
 
+    private bool ShouldShoot(StringName shooterId, float pressureDistance)
+    {
+        if (_attackProgress < 0.66f)
+            return false;
+        string role = _playerRoles[shooterId];
+        if (role is "GK" or "CB" or "LB" or "RB" or "DM")
+            return false;
+        FootballPlayer? shooter = GetPlayer(shooterId);
+        float chance = 0.16f + (_attackProgress - 0.66f) * 1.35f + ((shooter?.finishing ?? 50) - 65) / 180f;
+        if (pressureDistance < 0.08f) chance -= 0.09f;
+        if (role == "ST") chance += 0.12f;
+        return DecisionRoll(shooterId, _pressingPlayerId, _decisionSerial + 73) < Mathf.Clamp(chance, 0.10f, 0.72f);
+    }
+
+    private void StartLiveShot(StringName shooterId, float pressureDistance)
+    {
+        if (Simulation is null)
+            return;
+        bool homeAttack = _playerTeams[shooterId] == Simulation.home.team.id;
+        StringName defendingTeamId = homeAttack ? Simulation.away.team.id : Simulation.home.team.id;
+        StringName goalkeeperId = ChooseGoalkeeper(defendingTeamId);
+        Vector2 shooterPosition = CurrentPositions[shooterId];
+        float goalX = homeAttack ? 0.006f : 0.994f;
+        float targetY = 0.42f + DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 101) * 0.16f;
+        Vector2 goalTarget = new(goalX, targetY);
+        FootballPlayer? shooter = GetPlayer(shooterId);
+        FootballPlayer? goalkeeper = GetPlayer(goalkeeperId);
+
+        StringName blockerId = CurrentPositions.Keys
+            .Where(id => _playerTeams[id] == defendingTeamId && _playerRoles[id] != "GK")
+            .OrderBy(id => DistanceToSegment(CurrentPositions[id], shooterPosition, goalTarget))
+            .FirstOrDefault() ?? new StringName();
+        float blockerDistance = blockerId != new StringName()
+            ? DistanceToSegment(CurrentPositions[blockerId], shooterPosition, goalTarget)
+            : 1f;
+        float blockChance = blockerId == new StringName() ? 0 : Mathf.Clamp(
+            0.08f + (0.075f - blockerDistance) * 5.2f + ((GetPlayer(blockerId)?.positioning ?? 50) - 65) / 210f,
+            0, 0.58f);
+
+        string outcome;
+        Vector2 destination;
+        StringName nextOwner = goalkeeperId;
+        if (DecisionRoll(shooterId, blockerId, _decisionSerial + 131) < blockChance)
+        {
+            outcome = "blocked";
+            destination = CurrentPositions[blockerId];
+            nextOwner = blockerId;
+        }
+        else
+        {
+            float goalDistance = Math.Abs(shooterPosition.X - goalX);
+            float anglePenalty = Math.Abs(shooterPosition.Y - 0.5f) * 0.42f;
+            float accuracy = Mathf.Clamp(
+                0.52f + ((shooter?.finishing ?? 50) - 65) / 115f - goalDistance * 0.28f -
+                anglePenalty - (pressureDistance < 0.08f ? 0.10f : 0),
+                0.24f, 0.86f);
+            if (DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 151) > accuracy)
+            {
+                outcome = "off_target";
+                destination = new Vector2(goalX, targetY < 0.5f ? 0.27f : 0.73f);
+            }
+            else
+            {
+                float shotQuality = ((shooter?.finishing ?? 50) * 0.58f + (shooter?.positioning ?? 50) * 0.22f +
+                                     (shooter?.form ?? 50) * 0.20f);
+                float keeperQuality = (goalkeeper?.goalkeeping ?? 55) * 0.78f + (goalkeeper?.form ?? 50) * 0.22f;
+                float goalChance = Mathf.Clamp(
+                    0.30f + (shotQuality - keeperQuality) / 125f + (0.30f - goalDistance) * 0.42f -
+                    (pressureDistance < 0.08f ? 0.08f : 0),
+                    0.10f, 0.68f);
+                bool goal = DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 181) < goalChance;
+                outcome = goal ? "goal" : "saved";
+                destination = goal ? goalTarget : CurrentPositions.GetValueOrDefault(goalkeeperId, goalTarget);
+            }
+        }
+
+        _pendingShotOutcome = outcome;
+        _pendingShotShooterId = shooterId;
+        _pendingShotGoalkeeperId = goalkeeperId;
+        _pendingShotBlockerId = blockerId;
+        StartBallAction(destination, 0.46f, 0.012f, nextOwner, BallActionKind.Shot);
+        SetAction($"{PlayerName(shooterId)} tung cú sút");
+    }
+
+    private void CompleteLiveShot()
+    {
+        if (Simulation is null || _pendingShotOutcome == new StringName())
+            return;
+        FootballMatchEvent? matchEvent = Simulation.register_live_shot(
+            _actionSourceTeamId,
+            _pendingShotShooterId,
+            _pendingShotOutcome,
+            _pendingShotGoalkeeperId,
+            _pendingShotBlockerId);
+        if (matchEvent is not null)
+            EmitSignal(SignalName.LiveMatchEvent, matchEvent);
+
+        string resultText = _pendingShotOutcome.ToString() switch
+        {
+            "goal" => $"BÀN THẮNG — {PlayerName(_pendingShotShooterId)}",
+            "saved" => $"{PlayerName(_pendingShotGoalkeeperId)} cản phá",
+            "blocked" => $"{PlayerName(_pendingShotBlockerId)} chắn cú sút",
+            _ => $"{PlayerName(_pendingShotShooterId)} sút chệch khung thành"
+        };
+        SetAction(resultText);
+
+        StringName defendingTeamId = _actionSourceTeamId == Simulation.home.team.id
+            ? Simulation.away.team.id
+            : Simulation.home.team.id;
+        _activeTeamId = defendingTeamId;
+        Simulation.set_live_possession(defendingTeamId);
+        _attackProgress = 0.16f;
+        _phaseLane = 0.5f;
+        SelectPhasePlayers();
+        _pendingShotOutcome = new StringName();
+        _pendingShotShooterId = new StringName();
+        _pendingShotGoalkeeperId = new StringName();
+        _pendingShotBlockerId = new StringName();
+    }
+
     private bool TryResolveTackle(StringName ownerId, StringName defenderId, float distance)
     {
         FootballPlayer? owner = GetPlayer(ownerId);
@@ -570,6 +717,7 @@ public partial class MatchPitch2D : Control
 
         _ballOwnerId = defenderId;
         _activeTeamId = _playerTeams[defenderId];
+        Simulation!.set_live_possession(_activeTeamId);
         bool homeRecovery = _activeTeamId == Simulation!.home.team.id;
         _attackProgress = Mathf.Clamp(homeRecovery ? 1f - BallPosition.X : BallPosition.X, 0.16f, 0.62f);
         _phaseLane = CurrentPositions[defenderId].Y;
@@ -618,6 +766,7 @@ public partial class MatchPitch2D : Control
         _ballNextOwnerId = defenderId;
         _ballActionKind = BallActionKind.Interception;
         _activeTeamId = _playerTeams[defenderId];
+        Simulation.set_live_possession(_activeTeamId);
         bool homeRecovery = _activeTeamId == Simulation.home.team.id;
         _attackProgress = Mathf.Clamp(homeRecovery ? 1f - BallPosition.X : BallPosition.X, 0.16f, 0.60f);
         _phaseLane = CurrentPositions[defenderId].Y;

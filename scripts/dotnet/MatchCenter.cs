@@ -62,6 +62,7 @@ public partial class MatchCenter : Control
     public void PauseMatch()
     {
         _matchTimer?.Stop();
+        _pitchView?.SetPlaying(false);
         if (_playButton is not null && simulation is not null && !simulation.is_finished)
             _playButton.Text = "▶ Tiếp tục";
     }
@@ -200,6 +201,7 @@ public partial class MatchCenter : Control
 
         _pitchView = new MatchPitch2D { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _pitchView.ActionChanged += description => _pitchActionLabel.Text = $"• {description}";
+        _pitchView.LiveMatchEvent += OnLiveMatchEvent;
         box.AddChild(_pitchView);
         _eventScroll = new ScrollContainer
         {
@@ -370,6 +372,7 @@ public partial class MatchCenter : Control
         FootballTeam opponent = opponents[_opponentOption.Selected];
         long seed = unchecked((long)Time.GetTicksMsec()) + managed_team.id.GetHashCode() + opponent.id.GetHashCode();
         simulation = new FootballMatchSimulation().setup(managed_team, opponent, seed);
+        simulation.use_live_pitch_events = true;
         _pitchView.SetMatch(simulation);
         _homeNameLabel.Text = managed_team.display_name;
         _awayNameLabel.Text = opponent.display_name;
@@ -392,12 +395,14 @@ public partial class MatchCenter : Control
         if (_matchTimer.IsStopped())
         {
             _matchTimer.Start();
+            _pitchView.SetPlaying(true);
             _playButton.Text = "Ⅱ Tạm dừng";
             _statusLabel.Text = "Đang thi đấu";
         }
         else
         {
             _matchTimer.Stop();
+            _pitchView.SetPlaying(false);
             _playButton.Text = "▶ Tiếp tục";
             _statusLabel.Text = "Đã tạm dừng";
         }
@@ -417,6 +422,8 @@ public partial class MatchCenter : Control
         if (simulation is null) PrepareNewMatch();
         if (simulation is null) return;
         _matchTimer.Stop();
+        _pitchView.SetPlaying(false);
+        simulation.use_live_pitch_events = false;
         Array<FootballMatchEvent> remaining = simulation.simulate_to_end();
         foreach (FootballMatchEvent matchEvent in remaining) AppendEvent(matchEvent);
         _pitchView.AnimateMinute(remaining);
@@ -431,6 +438,7 @@ public partial class MatchCenter : Control
         UpdateStatsLabels();
         if (!simulation.is_finished) return;
         _matchTimer.Stop();
+        _pitchView.SetPlaying(false);
         _playButton.Text = "Đã kết thúc";
         _statusLabel.Text = "Trận đấu kết thúc";
         SetControlsEnabled(false);
@@ -446,6 +454,12 @@ public partial class MatchCenter : Control
         }
         _homeStatsLabel.Text = StatsText(simulation.home);
         _awayStatsLabel.Text = StatsText(simulation.away);
+    }
+
+    private void OnLiveMatchEvent(FootballMatchEvent matchEvent)
+    {
+        AppendEvent(matchEvent);
+        RefreshMatchState();
     }
 
     private string StatsText(MatchTeamState state) =>

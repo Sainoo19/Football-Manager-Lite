@@ -78,9 +78,11 @@ public partial class DotNetTestRunner : Node
     {
         Array<FootballTeam> teams = new SampleDataFactory().create_teams();
         FootballMatchSimulation simulation = new FootballMatchSimulation().setup(teams[0], teams[1], 42);
+        simulation.use_live_pitch_events = true;
         var pitch = new MatchPitch2D();
         AddChild(pitch);
         pitch.SetMatch(simulation);
+        pitch.SetPlaying(true);
         Check(pitch.CurrentPositions.Count == 22, "Sân 2D phải hiển thị đủ 22 cầu thủ.");
         var initial = pitch.CurrentPositions.ToDictionary(pair => pair.Key, pair => pair.Value);
         Vector2 initialBall = pitch.BallPosition;
@@ -96,10 +98,17 @@ public partial class DotNetTestRunner : Node
         Check(pitch.BallPosition.DistanceTo(initialBall) > 0.01f, "Bóng phải được chuyền hoặc dẫn theo pha bóng.");
         Check(simulation.last_possession_team_id != new StringName(), "Engine phải truyền đội kiểm soát bóng cho sân 2D.");
         Check(pitch.BallPosition.X is >= 0 and <= 1 && pitch.BallPosition.Y is >= 0 and <= 1, "Bóng phải nằm trong vùng mô phỏng.");
-        for (int step = 0; step < 120; step++) pitch._Process(0.1);
+        for (int step = 0; step < 180; step++)
+        {
+            if (step % 5 == 0 && !simulation.is_finished)
+                pitch.AnimateMinute(simulation.advance_minute());
+            pitch._Process(0.1);
+        }
         int resolvedActions = pitch.CompletedPasses + pitch.Dribbles + pitch.Interceptions;
         Check(resolvedActions >= 3, "Một pha sở hữu bóng phải tạo ra nhiều quyết định chuyền, dẫn hoặc tranh chấp.");
         Check(pitch.LastActionName != "Chuẩn bị giao bóng", "Sân 2D phải công bố hành động cầu thủ vừa lựa chọn.");
+        int liveShots = simulation.events.Count(matchEvent => matchEvent.event_type.ToString() is "goal" or "shot_on_target" or "shot_off_target" or "shot_blocked");
+        Check(liveShots >= 1, "Quyết định trên sân 2D phải tạo được ít nhất một cú sút thật trong engine.");
         pitch.QueueFree();
         GD.Print("PASS: sân 2D có quyết định chuyền/dẫn, pressing, đánh chặn và chạy chỗ phá tuyến.");
     }

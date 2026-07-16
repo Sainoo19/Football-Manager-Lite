@@ -13,6 +13,7 @@ public partial class FootballMatchSimulation : RefCounted
     public Array<FootballMatchEvent> events { get; set; } = new();
     public string last_error { get; set; } = "";
     public StringName last_possession_team_id { get; private set; } = new();
+    public bool use_live_pitch_events { get; set; }
 
     private readonly RandomNumberGenerator _rng = new();
 
@@ -37,11 +38,14 @@ public partial class FootballMatchSimulation : RefCounted
             return minuteEvents;
 
         current_minute++;
-        MatchTeamState attacking = ChoosePossessionTeam();
+        MatchTeamState attacking = use_live_pitch_events
+            ? get_state(last_possession_team_id) ?? home
+            : ChoosePossessionTeam();
         last_possession_team_id = attacking.team.id;
         IncrementStat(attacking, "possession_ticks");
         MatchTeamState defending = attacking == home ? away : home;
-        SimulateAttack(attacking, defending, minuteEvents);
+        if (!use_live_pitch_events)
+            SimulateAttack(attacking, defending, minuteEvents);
         SimulateFoul(minuteEvents);
 
         if (current_minute is 60 or 72 or 80)
@@ -153,6 +157,66 @@ public partial class FootballMatchSimulation : RefCounted
         current_minute <= 0 ? 50 : Mathf.RoundToInt((float)Stat(state, "possession_ticks") / current_minute * 100f);
 
     public string score_text() => $"{Stat(home, "goals")}  –  {Stat(away, "goals")}";
+
+    public void set_live_possession(StringName teamId)
+    {
+        if (use_live_pitch_events && get_state(teamId) is not null)
+            last_possession_team_id = teamId;
+    }
+
+    public FootballMatchEvent? register_live_shot(
+        StringName teamId,
+        StringName shooterId,
+        StringName outcome,
+        StringName goalkeeperId = null!,
+        StringName blockerId = null!)
+    {
+        if (!use_live_pitch_events || is_finished)
+            return null;
+        MatchTeamState? attacking = get_state(teamId);
+        if (attacking is null)
+            return null;
+        MatchTeamState defending = attacking == home ? away : home;
+        FootballPlayer? shooter = attacking.team.get_player(shooterId);
+        FootballPlayer? goalkeeper = defending.team.get_player(goalkeeperId ?? new StringName());
+        FootballPlayer? blocker = defending.team.get_player(blockerId ?? new StringName());
+        string shooterName = shooter?.display_name ?? "Một cầu thủ";
+        IncrementStat(attacking, "shots");
+
+        FootballMatchEvent matchEvent;
+        switch (outcome.ToString())
+        {
+            case "goal":
+                IncrementStat(attacking, "shots_on_target");
+                IncrementStat(attacking, "goals");
+                matchEvent = new FootballMatchEvent().setup(
+                    current_minute, "goal",
+                    $"VÀO! {shooterName} dứt điểm đánh bại {goalkeeper?.display_name ?? "thủ môn"}. Tỷ số là {score_text()}.",
+                    attacking.team.id, shooterId);
+                break;
+            case "saved":
+                IncrementStat(attacking, "shots_on_target");
+                matchEvent = new FootballMatchEvent().setup(
+                    current_minute, "shot_on_target",
+                    $"{shooterName} dứt điểm trúng đích, {goalkeeper?.display_name ?? "thủ môn"} cản phá.",
+                    attacking.team.id, shooterId);
+                break;
+            case "blocked":
+                matchEvent = new FootballMatchEvent().setup(
+                    current_minute, "shot_blocked",
+                    $"{shooterName} dứt điểm nhưng {blocker?.display_name ?? "hậu vệ"} đã chắn bóng.",
+                    attacking.team.id, shooterId);
+                break;
+            default:
+                matchEvent = new FootballMatchEvent().setup(
+                    current_minute, "shot_off_target",
+                    $"{shooterName} dứt điểm chệch khung thành.",
+                    attacking.team.id, shooterId);
+                break;
+        }
+        Record(matchEvent);
+        return matchEvent;
+    }
 
     private MatchTeamState ChoosePossessionTeam()
     {
