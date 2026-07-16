@@ -24,6 +24,12 @@ public partial class MatchPitch2D : Control
     private StringName _activeTeamId = new();
     private float _visualTime;
     private float _lastPassTime = -10;
+    private float _attackProgress = 0.22f;
+    private float _phaseLane = 0.5f;
+    private int _phaseSerial;
+    private StringName _primaryRunnerId = new();
+    private StringName _secondaryRunnerId = new();
+    private StringName _pressingPlayerId = new();
 
     private bool _ballActionActive;
     private Vector2 _ballActionFrom = new(0.5f, 0.5f);
@@ -51,9 +57,13 @@ public partial class MatchPitch2D : Control
         _playerSlotIds.Clear();
         _visualTime = 0;
         _lastPassTime = -10;
+        _attackProgress = 0.22f;
+        _phaseLane = 0.5f;
+        _phaseSerial = 0;
         BallPosition = new Vector2(0.5f, 0.5f);
         _activeTeamId = simulation.home.team.id;
         SyncLineups(true);
+        SelectPhasePlayers();
         _ballOwnerId = ChooseOwner(_activeTeamId, false);
         QueueRedraw();
     }
@@ -72,15 +82,21 @@ public partial class MatchPitch2D : Control
                 focusEvent = matchEvent;
         }
 
-        if (focusEvent is not null && focusEvent.team_id != new StringName())
-            _activeTeamId = focusEvent.team_id;
-        else if (Simulation.current_minute % 4 == 0)
-            _activeTeamId = _activeTeamId == Simulation.home.team.id ? Simulation.away.team.id : Simulation.home.team.id;
+        StringName possessionTeam = Simulation.last_possession_team_id;
+        if (focusEvent is not null && IsAttackingEvent(focusEvent.event_type) && focusEvent.team_id != new StringName())
+            possessionTeam = focusEvent.team_id;
+        if (possessionTeam == new StringName())
+            possessionTeam = _activeTeamId;
+
+        bool turnover = possessionTeam != _activeTeamId;
+        _activeTeamId = possessionTeam;
+        AdvancePhase(turnover, focusEvent);
+        SelectPhasePlayers();
 
         if (focusEvent is not null)
             AnimateEvent(focusEvent);
-        else if (!_ballActionActive && _visualTime - _lastPassTime >= 0.55f)
-            StartPass(ChooseOwner(_activeTeamId, Simulation.current_minute % 3 != 0));
+        else if (!_ballActionActive && _visualTime - _lastPassTime >= 0.45f)
+            StartPass(ChoosePassTarget());
         QueueRedraw();
     }
 
@@ -95,9 +111,14 @@ public partial class MatchPitch2D : Control
         foreach (StringName playerId in CurrentPositions.Keys.ToArray())
         {
             if (TargetPositions.TryGetValue(playerId, out Vector2 target))
-                CurrentPositions[playerId] = CurrentPositions[playerId].Lerp(target, weight);
+            {
+                float roleSpeed = RoleSpeed(_playerRoles[playerId]);
+                CurrentPositions[playerId] = CurrentPositions[playerId].Lerp(target, Mathf.Clamp(weight * roleSpeed, 0, 1));
+            }
         }
         UpdateBall(delta);
+        if (!_ballActionActive && _ballOwnerId != new StringName() && _visualTime - _lastPassTime >= 0.82f)
+            StartPass(ChoosePassTarget());
         QueueRedraw();
     }
 
@@ -167,23 +188,121 @@ public partial class MatchPitch2D : Control
     {
         if (Simulation is null)
             return;
-        foreach ((StringName playerId, Vector2 basePosition) in BasePositions)
+
+        Vector2 ballAnchor = PhaseBallAnchor();
+        var proposed = new System.Collections.Generic.Dictionary<StringName, Vector2>();
+
+        foreach (StringName playerId in BasePositions.Keys)
         {
-            bool isHome = _playerTeams[playerId] == Simulation.home.team.id;
-            bool isActive = _playerTeams[playerId] == _activeTeamId;
-            float direction = isHome ? -1 : 1;
-            string role = _playerRoles[playerId];
-            float scale = MovementScale(role);
-            float phase = Math.Abs(playerId.GetHashCode()) % 31 * 0.31f;
-            float stride = _visualTime * (0.8f + scale * 4f) + phase;
-            float shiftX = direction * (isActive ? 0.065f : 0.022f);
-            if (role == "GK") shiftX *= 0.18f;
-            Vector2 roam = new(Mathf.Sin(stride * 0.83f) * scale, Mathf.Cos(stride * 1.17f) * scale * 0.72f);
-            if (playerId == _ballOwnerId)
-                roam.X += direction * 0.025f * (0.5f + 0.5f * Mathf.Sin(_visualTime * 2.4f));
-            Vector2 target = basePosition + new Vector2(shiftX, 0) + roam;
-            TargetPositions[playerId] = new Vector2(Mathf.Clamp(target.X, 0.025f, 0.975f), Mathf.Clamp(target.Y, 0.035f, 0.965f));
+            if (_playerTeams[playerId] != _activeTeamId)
+                continue;
+            proposed[playerId] = AttackingTarget(playerId, ballAnchor);
         }
+
+        foreach (StringName playerId in BasePositions.Keys)
+        {
+            if (_playerTeams[playerId] == _activeTeamId)
+                continue;
+            proposed[playerId] = DefensiveTarget(playerId, ballAnchor, proposed);
+        }
+
+        ApplyTeamSeparation(proposed);
+        foreach ((StringName playerId, Vector2 target) in proposed)
+            TargetPositions[playerId] = ClampToPitch(target);
+    }
+
+    private Vector2 AttackingTarget(StringName playerId, Vector2 ballAnchor)
+    {
+        bool isHome = _playerTeams[playerId] == Simulation!.home.team.id;
+        float direction = isHome ? -1f : 1f;
+        string role = _playerRoles[playerId];
+        Vector2 basePosition = BasePositions[playerId];
+        float ahead = role switch
+        {
+            "GK" => -0.52f,
+            "CB" => -0.28f,
+            "LB" or "RB" => -0.13f,
+            "DM" => -0.14f,
+            "CM" => -0.025f,
+            "AM" => 0.10f,
+            "LW" or "RW" => 0.16f,
+            "ST" => 0.22f,
+            _ => 0f
+        };
+
+        MatchTeamState state = _activeTeamId == Simulation.home.team.id ? Simulation.home : Simulation.away;
+        if (state.mentality == "attacking" && role != "GK") ahead += 0.045f;
+        if (state.mentality == "defensive" && role != "GK") ahead -= 0.035f;
+
+        float targetY = Mathf.Lerp(basePosition.Y, _phaseLane, role is "CM" or "AM" or "ST" ? 0.34f : 0.12f);
+        if (role is "LB" or "LW") targetY = Mathf.Min(targetY, 0.22f);
+        if (role is "RB" or "RW") targetY = Mathf.Max(targetY, 0.78f);
+
+        if (playerId == _primaryRunnerId)
+        {
+            ahead += 0.19f;
+            targetY = Mathf.Lerp(targetY, _phaseLane, 0.58f);
+        }
+        else if (playerId == _secondaryRunnerId)
+        {
+            ahead += role is "LB" or "RB" ? 0.23f : 0.12f;
+            if (role == "LB") targetY = 0.09f;
+            if (role == "RB") targetY = 0.91f;
+        }
+
+        if (playerId == _ballOwnerId)
+        {
+            ahead = -0.005f;
+            targetY = _phaseLane;
+        }
+
+        float supportOffset = ((Math.Abs(playerId.GetHashCode()) % 3) - 1) * 0.018f;
+        return new Vector2(ballAnchor.X + direction * ahead, targetY + supportOffset);
+    }
+
+    private Vector2 DefensiveTarget(
+        StringName playerId,
+        Vector2 ballAnchor,
+        System.Collections.Generic.Dictionary<StringName, Vector2> attackingTargets)
+    {
+        bool isHome = _playerTeams[playerId] == Simulation!.home.team.id;
+        float attackDirection = isHome ? -1f : 1f;
+        float goalSide = -attackDirection;
+        string role = _playerRoles[playerId];
+        Vector2 basePosition = BasePositions[playerId];
+
+        if (role == "GK")
+        {
+            float goalX = isHome ? 0.945f : 0.055f;
+            return new Vector2(goalX, Mathf.Lerp(0.5f, ballAnchor.Y, 0.18f));
+        }
+
+        if (playerId == _pressingPlayerId)
+            return ballAnchor + new Vector2(goalSide * 0.022f, 0);
+
+        if (role is "CB" or "LB" or "RB")
+        {
+            var marks = attackingTargets
+                .Where(pair => _playerRoles[pair.Key] is "ST" or "LW" or "RW" or "AM")
+                .OrderBy(pair => Math.Abs(pair.Value.Y - basePosition.Y))
+                .ToList();
+            Vector2 reference = marks.Count > 0 ? marks[0].Value : ballAnchor;
+            float lineX = ballAnchor.X + goalSide * 0.14f;
+            float markedX = reference.X + goalSide * 0.035f;
+            return new Vector2(Mathf.Lerp(lineX, markedX, 0.62f), Mathf.Lerp(basePosition.Y, reference.Y, 0.62f));
+        }
+
+        float distance = role switch
+        {
+            "DM" => 0.09f,
+            "CM" => 0.065f,
+            "AM" => 0.04f,
+            _ => 0.025f
+        };
+        float compactness = role is "DM" or "CM" ? 0.48f : 0.28f;
+        return new Vector2(
+            ballAnchor.X + goalSide * distance,
+            Mathf.Lerp(basePosition.Y, ballAnchor.Y, compactness));
     }
 
     private void UpdateBall(float delta)
@@ -223,14 +342,17 @@ public partial class MatchPitch2D : Control
         {
             bool homeAttack = matchEvent.team_id == Simulation.home.team.id;
             StringName defending = homeAttack ? Simulation.away.team.id : Simulation.home.team.id;
-            StartBallAction(new Vector2(homeAttack ? 0.006f : 0.994f, 0.5f), 0.72f, 0.045f, ChooseOwner(defending, false));
+            StartBallAction(new Vector2(homeAttack ? 0.006f : 0.994f, 0.5f), 0.72f, 0.045f, ChooseGoalkeeper(defending));
             return;
         }
         if (type == "corner")
         {
             bool homeCorner = matchEvent.team_id == Simulation.home.team.id;
-            Vector2 target = new(homeCorner ? 0.018f : 0.982f, Simulation.current_minute % 2 == 0 ? 0.045f : 0.955f);
-            StartBallAction(target, 0.58f, 0.028f, ChooseOwner(matchEvent.team_id, true));
+            Vector2 corner = new(homeCorner ? 0.018f : 0.982f, Simulation.current_minute % 2 == 0 ? 0.035f : 0.965f);
+            BallPosition = corner;
+            Vector2 crossTarget = new(homeCorner ? 0.12f : 0.88f, 0.5f);
+            StringName receiver = _primaryRunnerId != new StringName() ? _primaryRunnerId : ChooseOwner(matchEvent.team_id, true);
+            StartBallAction(crossTarget, 0.68f, 0.055f, receiver);
             return;
         }
         if (type is "half_time" or "full_time")
@@ -238,18 +360,26 @@ public partial class MatchPitch2D : Control
             StartBallAction(new Vector2(0.5f, 0.5f), 0.5f, 0, new StringName());
             return;
         }
-        if (matchEvent.player_id != new StringName() && CurrentPositions.ContainsKey(matchEvent.player_id))
+        if (type is "substitution" or "tactic")
+            return;
+        if (type == "yellow_card")
+            StartPass(ChoosePassTarget());
+        else if (matchEvent.player_id != new StringName() && CurrentPositions.ContainsKey(matchEvent.player_id))
             StartPass(matchEvent.player_id);
         else if (_visualTime - _lastPassTime >= 0.4f)
-            StartPass(ChooseOwner(_activeTeamId, false));
+            StartPass(ChoosePassTarget());
     }
 
     private void StartPass(StringName ownerId)
     {
-        if (ownerId == new StringName() || !CurrentPositions.TryGetValue(ownerId, out Vector2 target))
+        if (ownerId == new StringName() || !CurrentPositions.TryGetValue(ownerId, out Vector2 current))
             return;
+        Vector2 runTarget = TargetPositions.GetValueOrDefault(ownerId, current);
+        float lead = ownerId == _primaryRunnerId ? 0.78f : ownerId == _secondaryRunnerId ? 0.58f : 0.34f;
+        Vector2 target = current.Lerp(runTarget, lead);
+        float distance = BallPosition.DistanceTo(target);
         _lastPassTime = _visualTime;
-        StartBallAction(target, 0.46f, 0.018f, ownerId);
+        StartBallAction(target, Mathf.Clamp(0.28f + distance * 0.72f, 0.34f, 0.68f), 0.018f + distance * 0.035f, ownerId);
     }
 
     private void StartBallAction(Vector2 destination, float duration, float arc, StringName nextOwner)
@@ -285,6 +415,143 @@ public partial class MatchPitch2D : Control
         int index = (Simulation.current_minute + (int)(_visualTime * 3)) % candidates.Count;
         return candidates[index];
     }
+
+    private StringName ChooseGoalkeeper(StringName teamId)
+    {
+        foreach (StringName playerId in CurrentPositions.Keys)
+            if (_playerTeams[playerId] == teamId && _playerRoles[playerId] == "GK")
+                return playerId;
+        return ChooseOwner(teamId, false);
+    }
+
+    private StringName ChoosePassTarget()
+    {
+        if (Simulation is null)
+            return new StringName();
+        if (_ballOwnerId == new StringName() || !CurrentPositions.ContainsKey(_ballOwnerId))
+            return ChooseOwner(_activeTeamId, _attackProgress > 0.55f);
+
+        bool homeAttack = _activeTeamId == Simulation.home.team.id;
+        float direction = homeAttack ? -1f : 1f;
+        Vector2 owner = CurrentPositions[_ballOwnerId];
+        StringName bestId = new();
+        float bestScore = float.NegativeInfinity;
+        foreach (StringName candidateId in CurrentPositions.Keys)
+        {
+            if (candidateId == _ballOwnerId || _playerTeams[candidateId] != _activeTeamId || _playerRoles[candidateId] == "GK")
+                continue;
+            Vector2 candidate = TargetPositions.GetValueOrDefault(candidateId, CurrentPositions[candidateId]);
+            float distance = owner.DistanceTo(candidate);
+            if (distance > 0.48f || distance < 0.045f)
+                continue;
+            float forwardGain = direction * (candidate.X - owner.X);
+            float score = forwardGain * 2.7f - distance * 0.42f - Math.Abs(candidate.Y - _phaseLane) * 0.12f;
+            if (candidateId == _primaryRunnerId) score += _attackProgress > 0.52f ? 0.28f : 0.06f;
+            if (candidateId == _secondaryRunnerId) score += 0.09f;
+            if (score <= bestScore) continue;
+            bestScore = score;
+            bestId = candidateId;
+        }
+        return bestId != new StringName() ? bestId : ChooseOwner(_activeTeamId, false);
+    }
+
+    private void AdvancePhase(bool turnover, FootballMatchEvent? focusEvent)
+    {
+        if (Simulation is null)
+            return;
+        _phaseSerial++;
+        string eventType = focusEvent?.event_type.ToString() ?? "";
+        if (eventType is "half_time" or "full_time")
+        {
+            _attackProgress = 0.48f;
+            _phaseLane = 0.5f;
+            return;
+        }
+
+        if (turnover)
+        {
+            bool homeAttack = _activeTeamId == Simulation.home.team.id;
+            float recoveredProgress = homeAttack ? 1f - BallPosition.X : BallPosition.X;
+            _attackProgress = Mathf.Clamp(recoveredProgress, 0.18f, 0.58f);
+        }
+        else
+        {
+            _attackProgress += 0.075f;
+            if (_attackProgress > 0.88f && !IsAttackingEvent(focusEvent?.event_type ?? new StringName()))
+                _attackProgress = 0.34f;
+        }
+
+        if (eventType is "goal" or "shot_on_target" or "shot_off_target")
+            _attackProgress = 0.96f;
+        else if (eventType == "corner")
+            _attackProgress = 0.91f;
+
+        if (turnover || _phaseSerial % 2 == 0 || eventType == "corner")
+        {
+            float[] lanes = { 0.18f, 0.5f, 0.82f, 0.34f, 0.66f };
+            int teamSalt = Math.Abs(_activeTeamId.GetHashCode()) % lanes.Length;
+            _phaseLane = lanes[(Simulation.current_minute + _phaseSerial + teamSalt) % lanes.Length];
+        }
+    }
+
+    private void SelectPhasePlayers()
+    {
+        if (Simulation is null || CurrentPositions.Count == 0)
+            return;
+        Vector2 anchor = PhaseBallAnchor();
+        var runners = CurrentPositions.Keys
+            .Where(id => _playerTeams[id] == _activeTeamId && _playerRoles[id] is "ST" or "LW" or "RW" or "AM" or "CM")
+            .OrderBy(id => Math.Abs(id.GetHashCode() + _phaseSerial * 17))
+            .ToList();
+        _primaryRunnerId = runners.Count > 0 ? runners[_phaseSerial % runners.Count] : new StringName();
+
+        var supportRunners = CurrentPositions.Keys
+            .Where(id => _playerTeams[id] == _activeTeamId && id != _primaryRunnerId && _playerRoles[id] is "LB" or "RB" or "CM" or "LW" or "RW")
+            .OrderBy(id => Math.Abs(id.GetHashCode() - _phaseSerial * 11))
+            .ToList();
+        _secondaryRunnerId = supportRunners.Count > 0 ? supportRunners[_phaseSerial % supportRunners.Count] : new StringName();
+
+        _pressingPlayerId = CurrentPositions.Keys
+            .Where(id => _playerTeams[id] != _activeTeamId && _playerRoles[id] != "GK")
+            .OrderBy(id => CurrentPositions[id].DistanceSquaredTo(anchor))
+            .FirstOrDefault() ?? new StringName();
+    }
+
+    private Vector2 PhaseBallAnchor()
+    {
+        if (Simulation is null)
+            return new Vector2(0.5f, 0.5f);
+        bool homeAttack = _activeTeamId == Simulation.home.team.id;
+        float startX = homeAttack ? 0.86f : 0.14f;
+        float endX = homeAttack ? 0.08f : 0.92f;
+        return new Vector2(Mathf.Lerp(startX, endX, _attackProgress), _phaseLane);
+    }
+
+    private void ApplyTeamSeparation(System.Collections.Generic.Dictionary<StringName, Vector2> positions)
+    {
+        StringName[] ids = positions.Keys.ToArray();
+        for (int first = 0; first < ids.Length; first++)
+        {
+            for (int second = first + 1; second < ids.Length; second++)
+            {
+                if (_playerTeams[ids[first]] != _playerTeams[ids[second]])
+                    continue;
+                Vector2 delta = positions[ids[second]] - positions[ids[first]];
+                if (delta.LengthSquared() >= 0.0016f)
+                    continue;
+                float push = delta.Y >= 0 ? 0.022f : -0.022f;
+                positions[ids[first]] += new Vector2(0, -push);
+                positions[ids[second]] += new Vector2(0, push);
+            }
+        }
+    }
+
+    private static bool IsAttackingEvent(StringName eventType) =>
+        eventType.ToString() is "goal" or "shot_on_target" or "shot_off_target" or "corner";
+
+    private static Vector2 ClampToPitch(Vector2 position) => new(
+        Mathf.Clamp(position.X, 0.025f, 0.975f),
+        Mathf.Clamp(position.Y, 0.035f, 0.965f));
 
     private void SyncLineups(bool reset)
     {
@@ -336,12 +603,13 @@ public partial class MatchPitch2D : Control
         return Vector2.Zero;
     }
 
-    private static float MovementScale(string role) => role switch
+    private static float RoleSpeed(string role) => role switch
     {
-        "GK" => 0.008f,
-        "CB" or "LB" or "RB" => 0.024f,
-        "DM" or "CM" or "AM" => 0.038f,
-        _ => 0.052f
+        "GK" => 0.72f,
+        "CB" => 0.86f,
+        "LB" or "RB" => 1.08f,
+        "DM" or "CM" or "AM" => 1.02f,
+        _ => 1.14f
     };
 
     private void DrawEllipticalArc(Vector2 center, Vector2 radius, float start, float end, Color color)

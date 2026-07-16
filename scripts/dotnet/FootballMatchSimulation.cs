@@ -12,6 +12,7 @@ public partial class FootballMatchSimulation : RefCounted
     public bool is_finished { get; set; }
     public Array<FootballMatchEvent> events { get; set; } = new();
     public string last_error { get; set; } = "";
+    public StringName last_possession_team_id { get; private set; } = new();
 
     private readonly RandomNumberGenerator _rng = new();
 
@@ -21,6 +22,7 @@ public partial class FootballMatchSimulation : RefCounted
         away = new MatchTeamState().setup(awayTeam);
         current_minute = 0;
         is_finished = false;
+        last_possession_team_id = homeTeam.id;
         events.Clear();
         _rng.Seed = unchecked((ulong)seedValue);
         Record(new FootballMatchEvent().setup(
@@ -36,6 +38,7 @@ public partial class FootballMatchSimulation : RefCounted
 
         current_minute++;
         MatchTeamState attacking = ChoosePossessionTeam();
+        last_possession_team_id = attacking.team.id;
         IncrementStat(attacking, "possession_ticks");
         MatchTeamState defending = attacking == home ? away : home;
         SimulateAttack(attacking, defending, minuteEvents);

@@ -82,14 +82,21 @@ public partial class DotNetTestRunner : Node
         pitch.SetMatch(simulation);
         Check(pitch.CurrentPositions.Count == 22, "Sân 2D phải hiển thị đủ 22 cầu thủ.");
         var initial = pitch.CurrentPositions.ToDictionary(pair => pair.Key, pair => pair.Value);
+        Vector2 initialBall = pitch.BallPosition;
         Array<FootballMatchEvent> events = simulation.advance_minute();
         pitch.AnimateMinute(events);
         pitch._Process(0.35);
         int moving = pitch.CurrentPositions.Count(pair => pair.Value.DistanceTo(initial[pair.Key]) > 0.001f);
         Check(moving >= 18, "Phần lớn cầu thủ phải chuyển động liên tục.");
+        int leavingZones = pitch.TargetPositions.Count(pair => pair.Value.DistanceTo(pitch.BasePositions[pair.Key]) > 0.10f);
+        float longestRun = pitch.TargetPositions.Max(pair => pair.Value.DistanceTo(pitch.BasePositions[pair.Key]));
+        Check(leavingZones >= 10, "Cả hai khối đội hình phải dịch chuyển theo pha bóng, không neo trong vùng gốc.");
+        Check(longestRun >= 0.18f, "Phải có cầu thủ thực hiện một pha chạy chỗ dài.");
+        Check(pitch.BallPosition.DistanceTo(initialBall) > 0.01f, "Bóng phải được chuyền hoặc dẫn theo pha bóng.");
+        Check(simulation.last_possession_team_id != new StringName(), "Engine phải truyền đội kiểm soát bóng cho sân 2D.");
         Check(pitch.BallPosition.X is >= 0 and <= 1 && pitch.BallPosition.Y is >= 0 and <= 1, "Bóng phải nằm trong vùng mô phỏng.");
         pitch.QueueFree();
-        GD.Print("PASS: sân 2D đủ 22 cầu thủ và có chuyển động.");
+        GD.Print("PASS: sân 2D có chuyền bóng, pressing, dịch chuyển khối và chạy chỗ phá tuyến.");
     }
 
     private void TestUiIntegration()
