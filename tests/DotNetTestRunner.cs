@@ -18,6 +18,10 @@ public partial class DotNetTestRunner : Node
             TestPitchScaleAndMovementSpeed();
             TestOffsideRule();
             TestPassTrajectoryAndNearestContest();
+            TestDefensiveBlockSpacingAndRollingBall();
+            TestShotSelectionAndTraditionalGoalkeeper();
+            TestDirectAttackContinuationAndGoalkeeperLooseBallClaim();
+            TestGoalKickShapeAndSeededDecisionVariety();
             TestWideAttackKeepsFootballShape();
             TestPitchPauseAndReset();
             TestKickoffGoalResetAndHalfTimeSides();
@@ -265,6 +269,397 @@ public partial class DotNetTestRunner : Node
             "Khi đối phương giữ bóng, cầu thủ phòng ngự gần nhất tính theo mét phải là người pressing.");
 
         GD.Print("PASS: chuyền thường có điểm đón thực tế và mỗi đội cử đúng người gần bóng nhất tranh chấp.");
+    }
+
+    private static void TestDefensiveBlockSpacingAndRollingBall()
+    {
+        StringName homeTeamId = "block_home";
+        StringName awayTeamId = "block_away";
+        var positions = new System.Collections.Generic.Dictionary<StringName, Vector2>();
+        var basePositions = new System.Collections.Generic.Dictionary<StringName, Vector2>();
+        var playerTeams = new System.Collections.Generic.Dictionary<StringName, StringName>();
+        var roles = new System.Collections.Generic.Dictionary<StringName, string>();
+
+        AddPlayer("home_owner", homeTeamId, "LW", new Vector2(0.22f, 0.12f), new Vector2(0.25f, 0.18f));
+        AddPlayer("home_st", homeTeamId, "ST", new Vector2(0.35f, 0.48f), new Vector2(0.22f, 0.50f));
+        AddPlayer("home_rw", homeTeamId, "RW", new Vector2(0.48f, 0.82f), new Vector2(0.25f, 0.82f));
+        AddPlayer("away_gk", awayTeamId, "GK", new Vector2(0.06f, 0.50f), new Vector2(0.05f, 0.50f));
+        AddPlayer("away_lb", awayTeamId, "LB", new Vector2(0.72f, 0.12f), new Vector2(0.24f, 0.15f));
+        AddPlayer("away_lcb", awayTeamId, "CB", new Vector2(0.70f, 0.38f), new Vector2(0.23f, 0.38f));
+        AddPlayer("away_rcb", awayTeamId, "CB", new Vector2(0.82f, 0.64f), new Vector2(0.23f, 0.62f));
+        AddPlayer("away_rb", awayTeamId, "RB", new Vector2(0.76f, 0.88f), new Vector2(0.24f, 0.85f));
+        AddPlayer("away_dm", awayTeamId, "DM", new Vector2(0.68f, 0.50f), new Vector2(0.34f, 0.50f));
+        AddPlayer("away_cm", awayTeamId, "CM", new Vector2(0.58f, 0.72f), new Vector2(0.42f, 0.70f));
+
+        FootballWorldSnapshot world = new(
+            positions,
+            basePositions,
+            playerTeams,
+            roles,
+            positions["home_owner"],
+            positions["home_owner"],
+            "home_owner",
+            new StringName(),
+            homeTeamId,
+            homeTeamId,
+            false,
+            false);
+        System.Collections.Generic.Dictionary<StringName, PlayerIntent> planned =
+            new FootballIntentPlanner().Plan(world);
+        PlayerIntent[] awayDefensiveIntents = planned
+            .Where(pair => playerTeams[pair.Key] == awayTeamId && roles[pair.Key] != "GK")
+            .Select(pair => pair.Value)
+            .ToArray();
+        Check(
+            awayDefensiveIntents.All(intent => intent.Target.X < 0.50f),
+            "Đội bảo vệ khung thành bên trái phải thu khối về nửa sân trái thay vì tản sang sân đối phương.");
+        PlayerIntent[] backLineIntents = new[] { "away_lb", "away_lcb", "away_rcb", "away_rb" }
+            .Select(id => planned[id])
+            .Where(intent => intent.Kind != PlayerIntentKind.PressBall)
+            .ToArray();
+        float backLineDepthSpread = backLineIntents.Max(intent => intent.Target.X) -
+                                    backLineIntents.Min(intent => intent.Target.X);
+        Check(
+            backLineDepthSpread < 0.13f,
+            "Hàng phòng ngự phải giữ cùng một tuyến cơ bản thay vì mỗi người chạy theo một hướng.");
+
+        var crowdedIntents = new System.Collections.Generic.Dictionary<StringName, PlayerIntent>
+        {
+            ["away_lb"] = new PlayerIntent(PlayerIntentKind.HoldShape, new Vector2(0.25f, 0.20f), LiveTeamPhase.Defending),
+            ["away_lcb"] = new PlayerIntent(PlayerIntentKind.HoldShape, new Vector2(0.25f, 0.20f), LiveTeamPhase.Defending),
+            ["away_rcb"] = new PlayerIntent(PlayerIntentKind.HoldShape, new Vector2(0.25f, 0.20f), LiveTeamPhase.Defending),
+            ["away_rb"] = new PlayerIntent(PlayerIntentKind.HoldShape, new Vector2(0.25f, 0.20f), LiveTeamPhase.Defending)
+        };
+        TeamSpacingResolver.Resolve(world, crowdedIntents);
+        float minimumSpacingMeters = float.PositiveInfinity;
+        StringName[] crowdedIds = crowdedIntents.Keys.ToArray();
+        for (int first = 0; first < crowdedIds.Length; first++)
+        {
+            for (int second = first + 1; second < crowdedIds.Length; second++)
+            {
+                minimumSpacingMeters = Mathf.Min(
+                    minimumSpacingMeters,
+                    FootballPitchDimensions.DistanceMeters(
+                        crowdedIntents[crowdedIds[first]].Target,
+                        crowdedIntents[crowdedIds[second]].Target));
+            }
+        }
+        Check(minimumSpacingMeters >= 4.9f, "Bốn đồng đội không được nhận mục tiêu chụm vào cùng một điểm.");
+
+        RollingBallPhysics rollingPhysics = new();
+        RollingBallStep firstStep = rollingPhysics.Advance(
+            new Vector2(0.30f, 0.50f),
+            new Vector2(6f, 0f),
+            0.5f);
+        RollingBallStep secondStep = rollingPhysics.Advance(
+            firstStep.Position,
+            firstStep.VelocityMetersPerSecond,
+            0.5f);
+        Check(
+            firstStep.Position.X > 0.30f && secondStep.Position.X > firstStep.Position.X,
+            "Bóng thiếu lực phải tiếp tục lăn qua nhiều nhịp thay vì dừng ngay tại điểm kết thúc đường chuyền.");
+        Check(
+            firstStep.VelocityMetersPerSecond.Length() < 6f &&
+            secondStep.VelocityMetersPerSecond.Length() < firstStep.VelocityMetersPerSecond.Length(),
+            "Ma sát phải làm bóng giảm tốc dần theo thời gian.");
+
+        GD.Print("PASS: khối phòng ngự giữ tuyến, đồng đội giữ cự ly và bóng lăn giảm tốc có quán tính.");
+
+        void AddPlayer(string id, StringName teamId, string role, Vector2 position, Vector2 basePosition)
+        {
+            StringName playerId = id;
+            positions[playerId] = position;
+            basePositions[playerId] = basePosition;
+            playerTeams[playerId] = teamId;
+            roles[playerId] = role;
+        }
+    }
+
+    private static void TestShotSelectionAndTraditionalGoalkeeper()
+    {
+        ShotDecisionEvaluator shotDecision = new();
+        Check(
+            !shotDecision.ShouldShoot("ST", 90, 45f, 8f, 20, 0f),
+            "Tiền đạo không được sút cưỡng ép từ khoảng cách 40–50 mét.");
+        Check(
+            shotDecision.ShouldShoot("ST", 72, 18f, 6f, 6, 0.10f),
+            "Tiền đạo có khoảng trống trong vùng dứt điểm hợp lý vẫn phải biết sút.");
+
+        ShotOutcomeResolver outcomeResolver = new();
+        int goals = 0;
+        int offTarget = 0;
+        int goalkeeperStops = 0;
+        int longRangeGoals = 0;
+        for (int sample = 0; sample < 240; sample++)
+        {
+            float accuracyRoll = ((sample * 37) % 239) / 238f;
+            float goalRoll = ((sample * 71 + 13) % 239) / 238f;
+            float handlingRoll = ((sample * 97 + 29) % 239) / 238f;
+            float cornerRoll = ((sample * 53 + 7) % 239) / 238f;
+            ShotOutcome outcome = outcomeResolver.Resolve(
+                70,
+                68,
+                65,
+                72,
+                65,
+                17f,
+                0.18f,
+                5.5f,
+                accuracyRoll,
+                goalRoll,
+                handlingRoll,
+                cornerRoll);
+            if (outcome == ShotOutcome.Goal)
+            {
+                goals++;
+            }
+            else if (outcome == ShotOutcome.OffTarget)
+            {
+                offTarget++;
+            }
+            else
+            {
+                goalkeeperStops++;
+            }
+
+            ShotOutcome longRangeOutcome = outcomeResolver.Resolve(
+                78,
+                70,
+                65,
+                72,
+                65,
+                30f,
+                0.15f,
+                6f,
+                accuracyRoll,
+                goalRoll,
+                handlingRoll,
+                cornerRoll);
+            if (longRangeOutcome == ShotOutcome.Goal)
+            {
+                longRangeGoals++;
+            }
+        }
+        Check(offTarget >= 55, "Một phần đáng kể cú sút phải đi ra ngoài khung thành.");
+        Check(goalkeeperStops > goals, "Thủ môn phải cản phá nhiều cú sút hơn số bàn thua trong mẫu cân bằng.");
+        Check(longRangeGoals <= 12, "Cú sút khoảng 30 mét không được có tỷ lệ thành bàn phi thực tế.");
+
+        StringName homeTeamId = "keeper_home";
+        StringName awayTeamId = "keeper_away";
+        StringName goalkeeperId = "traditional_keeper";
+        StringName shooterId = "keeper_test_shooter";
+        var positions = new System.Collections.Generic.Dictionary<StringName, Vector2>
+        {
+            [goalkeeperId] = new Vector2(0.05f, 0.50f),
+            [shooterId] = new Vector2(0.25f, 0.30f)
+        };
+        var basePositions = positions.ToDictionary(pair => pair.Key, pair => pair.Value);
+        var playerTeams = new System.Collections.Generic.Dictionary<StringName, StringName>
+        {
+            [goalkeeperId] = awayTeamId,
+            [shooterId] = homeTeamId
+        };
+        var roles = new System.Collections.Generic.Dictionary<StringName, string>
+        {
+            [goalkeeperId] = "GK",
+            [shooterId] = "ST"
+        };
+        FootballWorldSnapshot shotWorld = new(
+            positions,
+            basePositions,
+            playerTeams,
+            roles,
+            positions[shooterId],
+            new Vector2(0.015f, 0.60f),
+            new StringName(),
+            new StringName(),
+            homeTeamId,
+            homeTeamId,
+            true,
+            false,
+            true,
+            true,
+            false);
+        PlayerIntent goalkeeperIntent = FootballIntentPlanner.GoalkeeperIntent(
+            shotWorld,
+            goalkeeperId,
+            awayTeamId,
+            LiveTeamPhase.Defending);
+        Check(
+            goalkeeperIntent.Target.Y > 0.56f,
+            "Thủ môn phải đổ về phía điểm đến của cú sút thay vì đứng bất động giữa khung thành.");
+        Check(
+            goalkeeperIntent.Target.X > shotWorld.OwnGoal(awayTeamId).X,
+            "Thủ môn truyền thống phải đứng hơi cao hơn vạch vôi để tham gia pha bóng.");
+        TraditionalGoalkeeperPlanner goalkeeperPlanner = new();
+        Check(
+            goalkeeperPlanner.ShouldUseBackPass("CB", 0.24f, true, 18f, 0.25f, 0.20f),
+            "Hậu vệ chịu áp lực trong phần sân nhà phải biết chuyền về cho thủ môn.");
+        Check(
+            !goalkeeperPlanner.ShouldUseBackPass("ST", 0.24f, true, 18f, 0.25f, 0.20f),
+            "Tiền đạo không được dùng đường chuyền về thủ môn như hành vi mặc định.");
+
+        GD.Print("PASS: giới hạn sút xa, kết quả sút đa dạng và thủ môn truyền thống tham gia trận đấu.");
+    }
+
+    private static void TestDirectAttackContinuationAndGoalkeeperLooseBallClaim()
+    {
+        DirectAttackContinuationPlanner continuationPlanner = new();
+        Check(
+            continuationPlanner.ShouldBeginAfterReception("ST", false, 0.76f, 14f),
+            "Đường chuyền phá tuyến ở phần sân cuối phải được nhận diện kể cả khi nhãn nội bộ chỉ là chuyền thường.");
+        Check(
+            !continuationPlanner.ShouldBeginAfterReception("ST", false, 0.45f, 14f),
+            "Đường chuyền tiến ở giữa sân chưa phải một pha đối mặt cần khóa hành vi tấn công.");
+        Check(
+            continuationPlanner.Decide("ST", 18f, 4f, 3) == DirectAttackContinuation.Shoot,
+            "Tiền đạo nhận chọc khe đối mặt trong vùng dứt điểm phải ưu tiên sút thay vì chuyền về.");
+        Check(
+            continuationPlanner.Decide("LW", 34f, 9f, 3) == DirectAttackContinuation.Carry,
+            "Cầu thủ tấn công nhận chọc khe còn xa khung thành phải dắt bóng tiếp.");
+        Check(
+            continuationPlanner.Decide("CB", 18f, 4f, 3) == DirectAttackContinuation.None,
+            "Quy tắc tiếp tục tấn công sau chọc khe không được áp dụng cho hậu vệ.");
+
+        StringName defendingTeamId = "loose_keeper_team";
+        StringName attackingTeamId = "loose_attacker_team";
+        StringName goalkeeperId = "loose_keeper";
+        StringName attackerId = "distant_attacker";
+        var positions = new System.Collections.Generic.Dictionary<StringName, Vector2>
+        {
+            [goalkeeperId] = new Vector2(0.055f, 0.50f),
+            [attackerId] = new Vector2(0.55f, 0.50f)
+        };
+        var basePositions = positions.ToDictionary(pair => pair.Key, pair => pair.Value);
+        var playerTeams = new System.Collections.Generic.Dictionary<StringName, StringName>
+        {
+            [goalkeeperId] = defendingTeamId,
+            [attackerId] = attackingTeamId
+        };
+        var roles = new System.Collections.Generic.Dictionary<StringName, string>
+        {
+            [goalkeeperId] = "GK",
+            [attackerId] = "ST"
+        };
+        FootballWorldSnapshot looseBallWorld = new(
+            positions,
+            basePositions,
+            playerTeams,
+            roles,
+            new Vector2(0.12f, 0.50f),
+            new Vector2(0.12f, 0.50f),
+            new StringName(),
+            new StringName(),
+            attackingTeamId,
+            attackingTeamId,
+            false,
+            true,
+            true);
+        TraditionalGoalkeeperPlanner goalkeeperPlanner = new();
+        Check(
+            goalkeeperPlanner.ShouldClaimLooseBall(looseBallWorld, goalkeeperId, defendingTeamId),
+            "Thủ môn gần bóng trong vùng cấm phải lao ra trước tiền đạo còn ở rất xa.");
+
+        FootballIntentPlanner intentPlanner = new();
+        System.Collections.Generic.Dictionary<StringName, PlayerIntent> intents = intentPlanner.Plan(looseBallWorld);
+        Check(
+            intents[goalkeeperId].Kind == PlayerIntentKind.ChaseLooseBall,
+            "Ý định của thủ môn phải đổi từ đứng giữ gôn sang lao tới bóng tự do an toàn.");
+
+        FootballWorldSnapshot midfieldLooseBallWorld = new(
+            positions,
+            basePositions,
+            playerTeams,
+            roles,
+            new Vector2(0.50f, 0.50f),
+            new Vector2(0.50f, 0.50f),
+            new StringName(),
+            new StringName(),
+            attackingTeamId,
+            attackingTeamId,
+            false,
+            true,
+            true);
+        Check(
+            !goalkeeperPlanner.ShouldClaimLooseBall(midfieldLooseBallWorld, goalkeeperId, defendingTeamId),
+            "Thủ môn truyền thống không được lao khỏi vùng cấm để đuổi bóng giữa sân.");
+
+        GD.Print("PASS: tiền đạo tiếp tục pha chọc khe và thủ môn chủ động thu bóng tự do trong vùng cấm.");
+    }
+
+    private static void TestGoalKickShapeAndSeededDecisionVariety()
+    {
+        GoalKickRestartPlanner restartPlanner = new();
+        Check(
+            GoalKickRestartPlanner.PreparationDurationSeconds >= 2.5f,
+            "Phát bóng phải có thời gian bóng chết để hai đội dàn lại vị trí.");
+        Vector2 goalkeeperTarget = restartPlanner.PositionTarget(
+            new Vector2(0.04f, 0.50f),
+            "GK",
+            true,
+            0.015f,
+            new Vector2(0.055f, 0.50f));
+        Vector2 homeCenterBackTarget = restartPlanner.PositionTarget(
+            new Vector2(0.20f, 0.40f),
+            "CB",
+            true,
+            0.015f,
+            goalkeeperTarget);
+        Vector2 homeStrikerTarget = restartPlanner.PositionTarget(
+            new Vector2(0.72f, 0.50f),
+            "ST",
+            true,
+            0.015f,
+            goalkeeperTarget);
+        Vector2 opponentStrikerTarget = restartPlanner.PositionTarget(
+            new Vector2(0.20f, 0.50f),
+            "ST",
+            false,
+            0.015f,
+            goalkeeperTarget);
+        Vector2 opponentCenterBackTarget = restartPlanner.PositionTarget(
+            new Vector2(0.75f, 0.40f),
+            "CB",
+            false,
+            0.015f,
+            goalkeeperTarget);
+
+        Check(
+            goalkeeperTarget.IsEqualApprox(new Vector2(0.055f, 0.50f)),
+            "Thủ môn phải di chuyển tới vị trí đặt bóng thay vì có bóng ngay lập tức.");
+        Check(
+            homeStrikerTarget.X > homeCenterBackTarget.X,
+            "Đội phát bóng phải dâng thành nhiều tuyến thay vì đứng tụm quanh khu 5,50 mét.");
+        Check(
+            opponentStrikerTarget.X > FootballPitchDimensions.PenaltyAreaDepthMeters /
+                                      FootballPitchDimensions.LengthMeters &&
+            opponentCenterBackTarget.X > opponentStrikerTarget.X,
+            "Đối phương phải ra khỏi vùng cấm và lùi thành khối để ngăn phản công.");
+        Vector2 illegalOpponent = new(0.08f, 0.50f);
+        Vector2 legalOpponent = restartPlanner.EnsureOpponentOutsidePenaltyArea(illegalOpponent, 0.015f);
+        Check(
+            legalOpponent.X > FootballPitchDimensions.PenaltyAreaDepthMeters /
+                              FootballPitchDimensions.LengthMeters,
+            "Không cầu thủ đối phương nào được còn trong vùng cấm khi quả phát bóng được thực hiện.");
+
+        DecisionVarietyTracker varietyTracker = new();
+        StringName repeatedTarget = "repeated_receiver";
+        StringName alternativeTarget = "alternative_receiver";
+        varietyTracker.RecordPassTarget(repeatedTarget);
+        varietyTracker.RecordPassTarget(repeatedTarget);
+        float repeatedScore = varietyTracker.PassScoreAdjustment(repeatedTarget, 0.5f, false);
+        float alternativeScore = varietyTracker.PassScoreAdjustment(alternativeTarget, 0.5f, false);
+        Check(
+            alternativeScore > repeatedScore,
+            "AI phải giảm ưu tiên tuyến chuyền vừa lặp lại nhiều lần khi có phương án tương đương.");
+
+        Array<FootballTeam> teams = new SampleDataFactory().create_teams();
+        FootballMatchSimulation seeded = new FootballMatchSimulation().setup(teams[0], teams[1], 987654321);
+        Check(
+            seeded.MatchSeed == 987654321,
+            "Sân 2D phải nhận được seed của trận để chuỗi quyết định thay đổi giữa các trận.");
+
+        GD.Print("PASS: phát bóng có pha dàn đội hình hợp luật và quyết định dùng biến thiên có seed.");
     }
 
     private void TestPitchPauseAndReset()
@@ -580,7 +975,7 @@ public partial class DotNetTestRunner : Node
         Check(pitch.BallPosition.DistanceTo(initialBall) > 0.01f, "Bóng phải được chuyền hoặc dẫn theo pha bóng.");
         Check(simulation.last_possession_team_id != new StringName(), "Engine phải truyền đội kiểm soát bóng cho sân 2D.");
         Check(pitch.BallPosition.X is >= 0 and <= 1 && pitch.BallPosition.Y is >= 0 and <= 1, "Bóng phải nằm trong vùng mô phỏng.");
-        for (int step = 0; step < 360; step++)
+        for (int step = 0; step < 445; step++)
         {
             if (step % 5 == 0 && !simulation.is_finished)
                 pitch.AnimateMinute(simulation.advance_minute());
@@ -600,7 +995,11 @@ public partial class DotNetTestRunner : Node
             "Ít nhất một đường chuyền hỏng hoặc pha phá bóng phải tạo bóng tự do để cầu thủ chạy tới thu hồi.");
         Check(pitch.LastActionName != "Chuẩn bị giao bóng", "Sân 2D phải công bố hành động cầu thủ vừa lựa chọn.");
         int liveShots = simulation.events.Count(matchEvent => matchEvent.event_type.ToString() is "goal" or "shot_on_target" or "shot_off_target" or "shot_blocked");
-        Check(liveShots >= 1, "Quyết định trên sân 2D phải tạo được ít nhất một cú sút thật trong engine.");
+        Check(
+            liveShots >= 1,
+            $"Quyết định trên sân 2D phải tạo được ít nhất một cú sút thật trong engine; " +
+            $"chuyền={pitch.CompletedPasses}, dẫn={pitch.Dribbles}, cắt={pitch.Interceptions}, " +
+            $"bóng hai={pitch.LooseBallRecoveries}, hành động={pitch.LastActionName}.");
         pitch.QueueFree();
         GD.Print("PASS: 22 cầu thủ có ý định riêng, hỗ trợ, chạy chỗ, pressing, bọc lót và chơi bóng.");
     }

@@ -40,6 +40,13 @@ public partial class MatchPitch2D : Control
     private readonly MatchSideController _sideController = new();
     private readonly OffsideRule _offsideRule = new();
     private readonly PassTrajectoryPlanner _passTrajectoryPlanner = new();
+    private readonly RollingBallPhysics _rollingBallPhysics = new();
+    private readonly ShotDecisionEvaluator _shotDecisionEvaluator = new();
+    private readonly ShotOutcomeResolver _shotOutcomeResolver = new();
+    private readonly TraditionalGoalkeeperPlanner _traditionalGoalkeeperPlanner = new();
+    private readonly DirectAttackContinuationPlanner _directAttackContinuationPlanner = new();
+    private readonly GoalKickRestartPlanner _goalKickRestartPlanner = new();
+    private readonly DecisionVarietyTracker _decisionVarietyTracker = new();
     private readonly IntentDictionary _playerIntents = new();
     private readonly HashSet<StringName> _interceptionAttemptedBy = new();
 
@@ -59,14 +66,18 @@ public partial class MatchPitch2D : Control
     private StringName _actionSourceTeamId = new();
     private float _nextDecisionTime;
     private int _decisionSerial;
+    private uint _liveDecisionSeed;
     private int _decisionsSinceShot;
     private StringName _pendingShotOutcome = new();
     private StringName _pendingShotShooterId = new();
     private StringName _pendingShotGoalkeeperId = new();
     private StringName _pendingShotBlockerId = new();
     private StringName _pendingOffsideReceiverId = new();
+    private StringName _directAttackOwnerId = new();
+    private int _directAttackActionsRemaining;
     private bool _looseBallActive;
     private float _looseBallResolveTime;
+    private Vector2 _looseBallVelocityMetersPerSecond;
     private bool _restartPending;
     private StringName _restartType = new();
     private StringName _restartTeamId = new();
@@ -89,6 +100,7 @@ public partial class MatchPitch2D : Control
     public StringName PendingRestartType => _restartPending ? _restartType : new StringName();
     public bool IsBallInFlight => _ballActionActive;
     public bool IsLooseBall => _looseBallActive;
+    public Vector2 LooseBallVelocityMetersPerSecond => _looseBallVelocityMetersPerSecond;
     public Vector2 BallFlightStart => _ballActionFrom;
     public Vector2 BallFlightTarget => _ballActionTo;
 
@@ -128,6 +140,9 @@ public partial class MatchPitch2D : Control
         _phaseLane = 0.5f;
         _phaseSerial = 0;
         _decisionSerial = 0;
+        _liveDecisionSeed = unchecked((uint)simulation.MatchSeed) ^
+                            unchecked((uint)(simulation.MatchSeed >> 32));
+        _decisionVarietyTracker.Reset();
         _decisionsSinceShot = 0;
         _nextDecisionTime = 0.35f;
         _nextIntentPlanTime = 0f;
@@ -147,8 +162,11 @@ public partial class MatchPitch2D : Control
         _pendingShotGoalkeeperId = new StringName();
         _pendingShotBlockerId = new StringName();
         _pendingOffsideReceiverId = new StringName();
+        _directAttackOwnerId = new StringName();
+        _directAttackActionsRemaining = 0;
         _looseBallActive = false;
         _looseBallResolveTime = 0f;
+        _looseBallVelocityMetersPerSecond = Vector2.Zero;
         _restartPending = false;
         _restartType = new StringName();
         _restartTeamId = new StringName();

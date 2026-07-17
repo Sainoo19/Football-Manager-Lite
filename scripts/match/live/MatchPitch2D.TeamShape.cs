@@ -15,6 +15,12 @@ public partial class MatchPitch2D
             return;
         }
 
+        if (_restartPending && _restartType == "goal_kick")
+        {
+            ApplyGoalKickRestartTargets();
+            return;
+        }
+
         PlanPlayerIntents(false);
         foreach ((StringName playerId, PlayerIntent intent) in _playerIntents)
         {
@@ -55,7 +61,9 @@ public partial class MatchPitch2D
             Simulation.home.team.id,
             _ballActionActive,
             _looseBallActive,
-            _sideController.HomeAttacksLeft);
+            _sideController.HomeAttacksLeft,
+            _ballActionActive && _ballActionKind == BallActionKind.Shot,
+            _ballActionActive && _ballActionKind == BallActionKind.Cross);
         System.Collections.Generic.Dictionary<StringName, PlayerIntent> planned = _intentPlanner.Plan(world);
 
         _playerIntents.Clear();

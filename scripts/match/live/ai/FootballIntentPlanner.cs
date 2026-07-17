@@ -7,6 +7,7 @@ public sealed class FootballIntentPlanner
     private const int SupportPlayerCount = 3;
     private const int ForwardRunnerCount = 3;
     private const int LooseBallChaserCount = 1;
+    private static readonly TraditionalGoalkeeperPlanner GoalkeeperPlanner = new();
 
     public Dictionary<StringName, PlayerIntent> Plan(FootballWorldSnapshot world)
     {
@@ -34,7 +35,7 @@ public sealed class FootballIntentPlanner
             }
         }
 
-        SeparateTeammateTargets(world, intents);
+        TeamSpacingResolver.Resolve(world, intents);
         return intents;
     }
 
@@ -109,19 +110,33 @@ public sealed class FootballIntentPlanner
         StringName teamId,
         Dictionary<StringName, PlayerIntent> intents)
     {
+        StringName goalkeeperId = new();
+        foreach (StringName playerId in TeamPlayers(world, teamId))
+        {
+            if (world.PlayerRoles[playerId] == "GK")
+            {
+                goalkeeperId = playerId;
+                break;
+            }
+        }
+        bool goalkeeperClaims = goalkeeperId != new StringName() &&
+                                GoalkeeperPlanner.ShouldClaimLooseBall(world, goalkeeperId, teamId);
         List<StringName> outfieldPlayers = TeamOutfieldPlayers(world, teamId);
-        List<StringName> chasers = ClosestPlayers(
-            world,
-            outfieldPlayers,
-            world.BallPosition,
-            LooseBallChaserCount);
+        List<StringName> chasers = goalkeeperClaims
+            ? new List<StringName>()
+            : ClosestPlayers(world, outfieldPlayers, world.BallPosition, LooseBallChaserCount);
         HashSet<StringName> chaserSet = new(chasers);
 
         foreach (StringName playerId in TeamPlayers(world, teamId))
         {
             if (world.PlayerRoles[playerId] == "GK")
             {
-                intents[playerId] = GoalkeeperIntent(world, playerId, teamId, LiveTeamPhase.LooseBall);
+                intents[playerId] = goalkeeperClaims
+                    ? new PlayerIntent(
+                        PlayerIntentKind.ChaseLooseBall,
+                        world.BallPosition,
+                        LiveTeamPhase.LooseBall)
+                    : GoalkeeperIntent(world, playerId, teamId, LiveTeamPhase.LooseBall);
             }
             else if (chaserSet.Contains(playerId))
             {
@@ -146,8 +161,7 @@ public sealed class FootballIntentPlanner
         StringName teamId,
         LiveTeamPhase phase)
     {
-        Vector2 goal = world.OwnGoal(teamId);
-        Vector2 target = new(goal.X, Mathf.Lerp(0.5f, world.BallPosition.Y, 0.22f));
+        Vector2 target = GoalkeeperPlanner.PositionTarget(world, teamId);
         return new PlayerIntent(PlayerIntentKind.Goalkeep, target, phase, world.BallOwnerId);
     }
 
@@ -292,45 +306,6 @@ public sealed class FootballIntentPlanner
         List<StringName> players = TeamPlayers(world, teamId);
         players.RemoveAll(playerId => world.PlayerRoles[playerId] == "GK");
         return players;
-    }
-
-    private static void SeparateTeammateTargets(
-        FootballWorldSnapshot world,
-        Dictionary<StringName, PlayerIntent> intents)
-    {
-        List<StringName> playerIds = new(intents.Keys);
-        for (int first = 0; first < playerIds.Count; first++)
-        {
-            for (int second = first + 1; second < playerIds.Count; second++)
-            {
-                StringName firstId = playerIds[first];
-                StringName secondId = playerIds[second];
-                if (world.PlayerTeams[firstId] != world.PlayerTeams[secondId])
-                {
-                    continue;
-                }
-
-                PlayerIntent firstIntent = intents[firstId];
-                PlayerIntent secondIntent = intents[secondId];
-                Vector2 delta = secondIntent.Target - firstIntent.Target;
-                if (delta.LengthSquared() >= 0.0016f)
-                {
-                    continue;
-                }
-
-                float push = delta.Y >= 0f ? 0.022f : -0.022f;
-                intents[firstId] = new PlayerIntent(
-                    firstIntent.Kind,
-                    SpaceEvaluator.ClampToPitch(firstIntent.Target + new Vector2(0f, -push)),
-                    firstIntent.TeamPhase,
-                    firstIntent.RelatedPlayerId);
-                intents[secondId] = new PlayerIntent(
-                    secondIntent.Kind,
-                    SpaceEvaluator.ClampToPitch(secondIntent.Target + new Vector2(0f, push)),
-                    secondIntent.TeamPhase,
-                    secondIntent.RelatedPlayerId);
-            }
-        }
     }
 
     private static bool IsAttackingRole(string role) => role is "CM" or "AM" or "LW" or "RW" or "ST";

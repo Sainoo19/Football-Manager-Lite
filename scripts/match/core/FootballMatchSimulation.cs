@@ -14,6 +14,7 @@ public partial class FootballMatchSimulation : RefCounted
     public string last_error { get; set; } = "";
     public StringName last_possession_team_id { get; private set; } = new();
     public bool use_live_pitch_events { get; set; }
+    public long MatchSeed { get; private set; }
 
     private readonly RandomNumberGenerator _rng = new();
 
@@ -25,6 +26,7 @@ public partial class FootballMatchSimulation : RefCounted
         is_finished = false;
         last_possession_team_id = homeTeam.id;
         events.Clear();
+        MatchSeed = seedValue;
         _rng.Seed = unchecked((ulong)seedValue);
         Record(new FootballMatchEvent().setup(
             0, "kickoff", $"Trận đấu bắt đầu tại sân của {home.team.display_name}."));

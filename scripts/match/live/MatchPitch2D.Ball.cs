@@ -11,8 +11,7 @@ public partial class MatchPitch2D
         {
             _ballActionElapsed += delta;
             float progress = Mathf.Clamp(_ballActionElapsed / Mathf.Max(_ballActionDuration, 0.01f), 0, 1);
-            float eased = progress * progress * (3 - 2 * progress);
-            BallPosition = _ballActionFrom.Lerp(_ballActionTo, eased);
+            BallPosition = _ballActionFrom.Lerp(_ballActionTo, progress);
             _ballVisualHeight = Mathf.Sin(progress * Mathf.Pi) * _ballActionArc;
             if (progress is >= 0.14f and <= 0.94f &&
                 _ballActionKind is BallActionKind.Pass or BallActionKind.ThroughBall or BallActionKind.Cross)
@@ -23,6 +22,11 @@ public partial class MatchPitch2D
             {
                 CompleteBallAction();
             }
+            return;
+        }
+        if (_looseBallActive)
+        {
+            AdvanceRollingBall(delta);
             return;
         }
         if (_ballOwnerId != new StringName() && CurrentPositions.TryGetValue(_ballOwnerId, out Vector2 owner))
@@ -107,6 +111,7 @@ public partial class MatchPitch2D
             runTarget,
             passType);
         _lastPassTime = _visualTime;
+        _decisionVarietyTracker.RecordPassTarget(receiverId);
         bool receiverIsOffside = _offsideRule.IsOffside(
             receiverId,
             _activeTeamId,
@@ -138,6 +143,7 @@ public partial class MatchPitch2D
         _ballNextOwnerId = nextOwner;
         _ballActionKind = kind;
         _pendingOffsideReceiverId = new StringName();
+        _looseBallVelocityMetersPerSecond = Vector2.Zero;
         _interceptionAttemptedBy.Clear();
         _ballOwnerId = new StringName();
         SelectPhasePlayers();
@@ -171,6 +177,10 @@ public partial class MatchPitch2D
     private void TryInterceptMovingBall()
     {
         if (Simulation is null || _actionSourceTeamId == new StringName()) return;
+        if (_ballActionKind == BallActionKind.Cross && TryGoalkeeperClaimCross())
+        {
+            return;
+        }
         float contactDistanceMeters = _ballActionKind switch
         {
             BallActionKind.Cross => 1.6f,
@@ -222,6 +232,45 @@ public partial class MatchPitch2D
         SetAction($"{PlayerName(defenderId)} cắt được đường bóng");
     }
 
+    private bool TryGoalkeeperClaimCross()
+    {
+        if (Simulation is null)
+        {
+            return false;
+        }
+
+        StringName defendingTeamId = _actionSourceTeamId == Simulation.home.team.id
+            ? Simulation.away.team.id
+            : Simulation.home.team.id;
+        StringName goalkeeperId = ChooseGoalkeeper(defendingTeamId);
+        if (goalkeeperId == new StringName() ||
+            _interceptionAttemptedBy.Contains(goalkeeperId) ||
+            FootballPitchDimensions.DistanceMeters(CurrentPositions[goalkeeperId], BallPosition) > 2.2f)
+        {
+            return false;
+        }
+
+        _interceptionAttemptedBy.Add(goalkeeperId);
+        FootballPlayer? goalkeeper = GetPlayer(goalkeeperId);
+        float claimChance = Mathf.Clamp(
+            0.52f + ((goalkeeper?.goalkeeping ?? 55) - 65) / 120f,
+            0.32f,
+            0.82f);
+        if (DecisionRoll(goalkeeperId, _actionSourceId, _decisionSerial + 229) >= claimChance)
+        {
+            return false;
+        }
+
+        _ballActionActive = false;
+        _ballActionKind = BallActionKind.None;
+        _ballNextOwnerId = new StringName();
+        _pendingOffsideReceiverId = new StringName();
+        _ballVisualHeight = 0f;
+        GivePossessionTo(goalkeeperId, 0.75f);
+        SetAction($"{PlayerName(goalkeeperId)} lao ra bắt gọn quả tạt");
+        return true;
+    }
+
     private void CompleteBallAction()
     {
         BallActionKind completedKind = _ballActionKind;
@@ -241,11 +290,13 @@ public partial class MatchPitch2D
         }
         else if (completedKind == BallActionKind.Clearance)
         {
-            StartLooseBall("Bóng được phá lên khoảng trống — hai đội cùng lao tới");
+            StartLooseBall(
+                "Bóng được phá lên khoảng trống — hai đội cùng lao tới",
+                RollingVelocityAfterFlight(completedKind));
         }
         else if (completedKind is BallActionKind.Pass or BallActionKind.ThroughBall or BallActionKind.Cross)
         {
-            CompletePassReception(intendedReceiverId);
+            CompletePassReception(intendedReceiverId, completedKind);
         }
         else if (intendedReceiverId != new StringName())
         {
@@ -257,7 +308,7 @@ public partial class MatchPitch2D
         SelectPhasePlayers();
     }
 
-    private void CompletePassReception(StringName receiverId)
+    private void CompletePassReception(StringName receiverId, BallActionKind completedKind)
     {
         const float controlDistanceMeters = 2.2f;
         if (receiverId != new StringName() &&
@@ -265,11 +316,17 @@ public partial class MatchPitch2D
             FootballPitchDimensions.DistanceMeters(receiverPosition, BallPosition) <= controlDistanceMeters)
         {
             CompletedPasses++;
+            if (ShouldBeginDirectAttack(receiverId, completedKind))
+            {
+                BeginDirectAttack(receiverId);
+            }
             GivePossessionTo(receiverId, 0.32f);
             return;
         }
 
-        StartLooseBall("Đường chuyền đi vào khoảng trống — cầu thủ phải chạy tới nhận bóng");
+        StartLooseBall(
+            "Đường chuyền thiếu lực — bóng tiếp tục lăn chậm, cầu thủ phải chạy tới",
+            RollingVelocityAfterFlight(completedKind));
     }
 
     private void ResolveOffside(StringName receiverId)
@@ -323,9 +380,19 @@ public partial class MatchPitch2D
         EmitSignal(SignalName.ActionChanged, description);
     }
 
-    private static float DecisionRoll(StringName firstId, StringName secondId, int serial)
+    private float DecisionRoll(StringName firstId, StringName secondId, int serial)
     {
-        uint value = unchecked(StableHash(firstId) * 2654435761u);
+        return CalculateRoll(firstId, secondId, serial, 0u);
+    }
+
+    private float VarietyRoll(StringName firstId, StringName secondId, int serial)
+    {
+        return CalculateRoll(firstId, secondId, serial, _liveDecisionSeed);
+    }
+
+    private static float CalculateRoll(StringName firstId, StringName secondId, int serial, uint seed)
+    {
+        uint value = unchecked(StableHash(firstId) * 2654435761u) ^ seed;
         value ^= unchecked(StableHash(secondId) * 2246822519u);
         value ^= unchecked((uint)serial * 3266489917u);
         value ^= value >> 16;

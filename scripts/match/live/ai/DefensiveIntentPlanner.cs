@@ -46,7 +46,8 @@ public static class DefensiveIntentPlanner
         }
 
         assigned.Add(coverPlayer);
-        Vector2 coverTarget = world.BallPosition.Lerp(world.OwnGoal(world.PlayerTeams[coverPlayer]), 0.18f);
+        StringName teamId = world.PlayerTeams[coverPlayer];
+        Vector2 coverTarget = DefensiveBlockTargeter.CoverTarget(world, coverPlayer, teamId);
         intents[coverPlayer] = new PlayerIntent(
             PlayerIntentKind.CoverPress,
             SpaceEvaluator.ClampToPitch(coverTarget),
@@ -82,11 +83,9 @@ public static class DefensiveIntentPlanner
             }
 
             StringName opponentId = threats[threatIndex++];
-            Vector2 opponentPosition = world.Positions[opponentId];
-            Vector2 goalSideOffset = (world.OwnGoal(teamId) - opponentPosition).Normalized() * 0.04f;
             intents[playerId] = new PlayerIntent(
                 PlayerIntentKind.MarkOpponent,
-                SpaceEvaluator.ClampToPitch(opponentPosition + goalSideOffset),
+                DefensiveBlockTargeter.MarkTarget(world, playerId, teamId, opponentId),
                 phase,
                 opponentId);
             assigned.Add(playerId);
@@ -112,10 +111,9 @@ public static class DefensiveIntentPlanner
                 continue;
             }
 
-            float shift = IsMidfieldRole(world.PlayerRoles[playerId]) ? 0.34f : 0.20f;
             intents[playerId] = new PlayerIntent(
                 PlayerIntentKind.HoldShape,
-                FootballIntentPlanner.ShiftBaseTowardBall(world, playerId, shift),
+                DefensiveBlockTargeter.ShapeTarget(world, playerId, teamId),
                 phase);
         }
     }
@@ -132,12 +130,11 @@ public static class DefensiveIntentPlanner
             }
         }
 
-        threats.Sort((first, second) => world.Positions[first].DistanceSquaredTo(ownGoal)
-            .CompareTo(world.Positions[second].DistanceSquaredTo(ownGoal)));
+        threats.Sort((first, second) =>
+            PlayerProximity.DistanceSquaredMeters(world.Positions[first], ownGoal)
+                .CompareTo(PlayerProximity.DistanceSquaredMeters(world.Positions[second], ownGoal)));
         return threats;
     }
-
-    private static bool IsMidfieldRole(string role) => role is "DM" or "CM" or "AM";
 
     private static bool IsDefensiveRole(string role) => role is "CB" or "LB" or "RB" or "DM";
 }

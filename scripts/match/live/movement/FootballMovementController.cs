@@ -116,6 +116,7 @@ public sealed class FootballMovementController
             PlayerIntentKind.RunIntoSpace => 7.8f,
             PlayerIntentKind.PressBall => 8.0f,
             PlayerIntentKind.ChaseLooseBall => 8.2f,
+            PlayerIntentKind.RepositionForRestart => 6.0f,
             _ => 5f
         };
         float paceFactor = Mathf.Lerp(0.82f, 1.10f, Mathf.Clamp(paceRating, 1, 99) / 99f);
