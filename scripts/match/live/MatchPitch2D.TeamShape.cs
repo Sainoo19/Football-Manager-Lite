@@ -20,6 +20,16 @@ public partial class MatchPitch2D
             ApplyGoalKickRestartTargets();
             return;
         }
+        if (_restartPending && _restartType == "free_kick")
+        {
+            ApplyFreeKickRestartTargets();
+            return;
+        }
+        if (_restartPending && _restartType == "penalty")
+        {
+            ApplyPenaltyRestartTargets();
+            return;
+        }
 
         PlanPlayerIntents(false);
         foreach ((StringName playerId, PlayerIntent intent) in _playerIntents)

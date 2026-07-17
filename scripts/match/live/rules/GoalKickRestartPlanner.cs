@@ -9,9 +9,9 @@ public enum GoalKickBallPresentation
 
 public sealed class GoalKickRestartPlanner
 {
-    public const float PreparationDurationSeconds = 3.2f;
-    public const float RetrievalStartsAfterSeconds = 0.65f;
-    public const float BallPlacedAfterSeconds = 2.1f;
+    public const float PreparationDurationSeconds = 8.5f;
+    public const float RetrievalStartsAfterSeconds = 0.8f;
+    public const float BallPlacedAfterSeconds = 6f;
 
     public GoalKickBallPresentation BallPresentation(float elapsedSeconds)
     {

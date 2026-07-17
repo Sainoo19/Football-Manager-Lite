@@ -41,7 +41,7 @@ public partial class MatchCenter : Control
     private Label _substitutionStatusLabel = null!;
     private Label _substitutionPreviewLabel = null!;
     private readonly LineupManager _lineupManager = new();
-    private readonly LiveMatchClock _matchClock = new();
+    private readonly LiveMatchRuntime _matchClock = new();
 
     public override void _Ready() => BuildInterface();
 
@@ -53,6 +53,7 @@ public partial class MatchCenter : Control
         }
 
         int elapsedMinutes = _matchClock.Advance(delta);
+        _pitchView.AdvanceGameTime(_matchClock.LastAdvancedGameSeconds);
         for (int minute = 0; minute < elapsedMinutes && !simulation.is_finished; minute++)
         {
             OnMatchTick();
@@ -289,7 +290,7 @@ public partial class MatchCenter : Control
         statsRow.AddChild(_homeStatsLabel);
         var names = new Label
         {
-            Text = "Kiểm soát bóng\nCú sút\nTrúng đích\nPhạt góc\nPhạm lỗi\nThẻ vàng\nThẻ đỏ",
+            Text = "Kiểm soát bóng\nCú sút\nTrúng đích\nPhạt góc\nChuyền đúng\nLỗi bước một\nPhạm lỗi\nThẻ vàng\nThẻ đỏ",
             HorizontalAlignment = HorizontalAlignment.Center
         };
         names.AddThemeColorOverride("font_color", MutedColor);
@@ -402,6 +403,7 @@ public partial class MatchCenter : Control
         long seed = unchecked((long)Time.GetTicksMsec()) + managed_team.id.GetHashCode() + opponent.id.GetHashCode();
         simulation = new FootballMatchSimulation().setup(managed_team, opponent, seed);
         simulation.use_live_pitch_events = true;
+        _pitchView.AttachRuntime(_matchClock);
         _pitchView.SetMatch(simulation);
         _homeNameLabel.Text = managed_team.display_name;
         _awayNameLabel.Text = opponent.display_name;
@@ -477,8 +479,8 @@ public partial class MatchCenter : Control
     {
         if (simulation is null)
         {
-            _homeStatsLabel.Text = "50%\n0\n0\n0\n0\n0\n0";
-            _awayStatsLabel.Text = "50%\n0\n0\n0\n0\n0\n0";
+            _homeStatsLabel.Text = "50%\n0\n0\n0\n0/0\n0\n0\n0\n0";
+            _awayStatsLabel.Text = "50%\n0\n0\n0\n0/0\n0\n0\n0\n0";
             return;
         }
         _homeStatsLabel.Text = StatsText(simulation.home);
@@ -492,7 +494,15 @@ public partial class MatchCenter : Control
     }
 
     private string StatsText(MatchTeamState state) =>
-        $"{simulation!.get_possession(state)}%\n{state.stats["shots"].AsInt32()}\n{state.stats["shots_on_target"].AsInt32()}\n{state.stats["corners"].AsInt32()}\n{state.stats["fouls"].AsInt32()}\n{state.stats["yellow_cards"].AsInt32()}\n{state.stats["red_cards"].AsInt32()}";
+        $"{simulation!.get_possession(state)}%\n" +
+        $"{state.stats["shots"].AsInt32()}\n" +
+        $"{state.stats["shots_on_target"].AsInt32()}\n" +
+        $"{state.stats["corners"].AsInt32()}\n" +
+        $"{state.stats["passes_completed"].AsInt32()}/{state.stats["passes_attempted"].AsInt32()}\n" +
+        $"{state.stats["first_touch_errors"].AsInt32()}\n" +
+        $"{state.stats["fouls"].AsInt32()}\n" +
+        $"{state.stats["yellow_cards"].AsInt32()}\n" +
+        $"{state.stats["red_cards"].AsInt32()}";
 
     private void RefreshSubstitutionOptions()
     {
@@ -684,7 +694,7 @@ public partial class MatchCenter : Control
     {
         var label = new Label
         {
-            Text = "50%\n0\n0\n0\n0\n0\n0",
+            Text = "50%\n0\n0\n0\n0/0\n0\n0\n0\n0",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             HorizontalAlignment = alignment
         };
@@ -717,6 +727,8 @@ public partial class MatchCenter : Control
             "goal" => AccentColor,
             "yellow_card" => new Color("f0d36c"),
             "red_card" => new Color("ff4d5f"),
+            "penalty" => new Color("ffbd59"),
+            "advantage" => new Color("43d17d"),
             "half_time" or "full_time" => new Color("62a8ff"),
             "substitution" or "tactic" => new Color("bb8cff"),
             _ => MutedColor

@@ -12,6 +12,7 @@ public sealed class LiveMatchClock
 {
     public const double MatchDurationSeconds = 90d * 60d;
     private const double OriginalFastMatchDurationSeconds = 90d * 0.28d;
+    private const double BoundaryToleranceSeconds = 0.000001d;
 
     public double ElapsedGameSeconds { get; private set; }
     public bool IsRunning { get; private set; }
@@ -30,7 +31,9 @@ public sealed class LiveMatchClock
     {
         get
         {
-            int totalSeconds = Math.Min((int)Math.Floor(ElapsedGameSeconds), (int)MatchDurationSeconds);
+            int totalSeconds = Math.Min(
+                (int)Math.Floor(ElapsedGameSeconds + BoundaryToleranceSeconds),
+                (int)MatchDurationSeconds);
             int minutes = totalSeconds / 60;
             int seconds = totalSeconds % 60;
             return $"{minutes:00}:{seconds:00}";
@@ -56,11 +59,11 @@ public sealed class LiveMatchClock
             return 0;
         }
 
-        int previousMinute = (int)Math.Floor(ElapsedGameSeconds / 60d);
+        int previousMinute = (int)Math.Floor((ElapsedGameSeconds + BoundaryToleranceSeconds) / 60d);
         ElapsedGameSeconds = Math.Min(
             ElapsedGameSeconds + realDeltaSeconds * GameSecondsPerRealSecond,
             MatchDurationSeconds);
-        int currentMinute = (int)Math.Floor(ElapsedGameSeconds / 60d);
+        int currentMinute = (int)Math.Floor((ElapsedGameSeconds + BoundaryToleranceSeconds) / 60d);
         if (ElapsedGameSeconds >= MatchDurationSeconds)
         {
             IsRunning = false;

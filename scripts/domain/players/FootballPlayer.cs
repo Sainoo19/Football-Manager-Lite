@@ -21,6 +21,9 @@ public partial class FootballPlayer : Resource
     [Export(PropertyHint.Range, "1,99")] public int finishing { get; set; } = 50;
     [Export(PropertyHint.Range, "1,99")] public int positioning { get; set; } = 50;
     [Export(PropertyHint.Range, "1,99")] public int goalkeeping { get; set; } = 10;
+    [Export(PropertyHint.Range, "1,99")] public int FirstTouch { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int Technique { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int Composure { get; set; } = 50;
 
     public FootballPlayer setup(
         StringName playerId,
@@ -51,6 +54,9 @@ public partial class FootballPlayer : Resource
         finishing = Attribute(overall + (position == "ST" ? 8 : position is "LW" or "RW" or "AM" ? 3 : -12));
         positioning = Attribute(overall + (position is "CB" or "DM" or "ST" ? 5 : 0));
         goalkeeping = position == "GK" ? Attribute(overall + 5) : Attribute(8 + variation);
+        FirstTouch = Attribute(overall + (position is "CM" or "AM" or "LW" or "RW" or "ST" ? 3 : -2));
+        Technique = Attribute(overall + (position is "CM" or "AM" or "LW" or "RW" ? 4 : position == "GK" ? -8 : 0));
+        Composure = Attribute(overall + (position is "GK" or "CB" or "DM" or "ST" ? 3 : 0));
     }
 
     private static int Attribute(int value) => Mathf.Clamp(value, 1, 99);

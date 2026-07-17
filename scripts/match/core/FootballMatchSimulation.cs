@@ -17,6 +17,7 @@ public partial class FootballMatchSimulation : RefCounted
     public long MatchSeed { get; private set; }
 
     private readonly RandomNumberGenerator _rng = new();
+    private readonly QuickMatchSimulator _quickMatchSimulator = new();
 
     public FootballMatchSimulation setup(FootballTeam homeTeam, FootballTeam awayTeam, long seedValue = 1)
     {
@@ -40,16 +41,21 @@ public partial class FootballMatchSimulation : RefCounted
             return minuteEvents;
 
         current_minute++;
-        MatchTeamState attacking = use_live_pitch_events
-            ? get_state(last_possession_team_id) ?? home
-            : ChoosePossessionTeam();
+        MatchTeamState attacking;
+        if (use_live_pitch_events)
+        {
+            attacking = get_state(last_possession_team_id) ?? home;
+            IncrementStat(attacking, "possession_ticks");
+        }
+        else
+        {
+            attacking = _quickMatchSimulator.SimulateMinute(home, away, current_minute, _rng, minuteEvents);
+            foreach (FootballMatchEvent matchEvent in minuteEvents)
+            {
+                Record(matchEvent);
+            }
+        }
         last_possession_team_id = attacking.team.id;
-        IncrementStat(attacking, "possession_ticks");
-        MatchTeamState defending = attacking == home ? away : home;
-        if (!use_live_pitch_events)
-            SimulateAttack(attacking, defending, minuteEvents);
-        if (!use_live_pitch_events)
-            SimulateFoul(minuteEvents);
 
         if (current_minute is 60 or 72 or 80)
             SimulateAiSubstitution(away, minuteEvents);
@@ -242,30 +248,64 @@ public partial class FootballMatchSimulation : RefCounted
         FootballPlayer? victim = victimState.team.get_player(victimId);
         IncrementStat(fouling, "fouls");
 
-        StringName eventType = "foul";
-        string suffix = "";
-        if (card == "red")
+        if (card == "yellow" || card == "red")
         {
-            IncrementStat(fouling, "red_cards");
-            fouling.send_off(offenderId);
-            eventType = "red_card";
-            suffix = " Trọng tài rút thẻ đỏ trực tiếp!";
+            return RegisterCardEvent(fouling, offenderId, victim, card, false);
         }
-        else if (card == "yellow")
-        {
-            IncrementStat(fouling, "yellow_cards");
-            eventType = "yellow_card";
-            suffix = " Trọng tài rút thẻ vàng.";
-        }
-
         var matchEvent = new FootballMatchEvent().setup(
             current_minute,
-            eventType,
-            $"{offender?.display_name ?? "Một cầu thủ"} phạm lỗi với {victim?.display_name ?? "đối phương"}.{suffix}",
+            "foul",
+            $"{offender?.display_name ?? "Một cầu thủ"} phạm lỗi với {victim?.display_name ?? "đối phương"}.",
             fouling.team.id,
             offenderId);
         Record(matchEvent);
         return matchEvent;
+    }
+
+    public FootballMatchEvent? RegisterLiveAdvantage(
+        StringName foulingTeamId,
+        StringName offenderId,
+        StringName victimId)
+    {
+        if (!use_live_pitch_events || is_finished)
+        {
+            return null;
+        }
+        MatchTeamState? fouling = get_state(foulingTeamId);
+        if (fouling is null)
+        {
+            return null;
+        }
+
+        MatchTeamState attacking = fouling == home ? away : home;
+        FootballPlayer? victim = attacking.team.get_player(victimId);
+        IncrementStat(fouling, "fouls");
+        var matchEvent = new FootballMatchEvent().setup(
+            current_minute,
+            "advantage",
+            $"Trọng tài cho lợi thế, {victim?.display_name ?? "đội tấn công"} tiếp tục lên bóng.",
+            attacking.team.id,
+            victimId);
+        Record(matchEvent);
+        return matchEvent;
+    }
+
+    public FootballMatchEvent? RegisterLiveDelayedCard(
+        StringName foulingTeamId,
+        StringName offenderId,
+        StringName card)
+    {
+        if (!use_live_pitch_events)
+        {
+            return null;
+        }
+        MatchTeamState? fouling = get_state(foulingTeamId);
+        if (fouling is null || (card != "yellow" && card != "red"))
+        {
+            return null;
+        }
+
+        return RegisterCardEvent(fouling, offenderId, null, card, true);
     }
 
     public FootballMatchEvent? RegisterLiveOffside(StringName attackingTeamId, StringName playerId)
@@ -307,6 +347,10 @@ public partial class FootballMatchSimulation : RefCounted
             case "free_kick":
                 text = $"{state.team.short_name} được hưởng đá phạt.";
                 break;
+            case "penalty":
+                IncrementStat(state, "penalties");
+                text = $"{state.team.short_name} được hưởng phạt đền.";
+                break;
             case "throw_in":
                 text = $"{state.team.short_name} được hưởng ném biên.";
                 break;
@@ -320,83 +364,77 @@ public partial class FootballMatchSimulation : RefCounted
         return matchEvent;
     }
 
-    private MatchTeamState ChoosePossessionTeam()
+    public void RegisterLivePassAttempt(StringName teamId)
     {
-        Dictionary homeStrengths = home.strengths();
-        Dictionary awayStrengths = away.strengths();
-        float homeWeight = homeStrengths["midfield"].AsSingle() * PossessionModifier(home.mentality) + 3f;
-        float awayWeight = awayStrengths["midfield"].AsSingle() * PossessionModifier(away.mentality);
-        return _rng.Randf() < homeWeight / Mathf.Max(homeWeight + awayWeight, 1f) ? home : away;
-    }
-
-    private void SimulateAttack(
-        MatchTeamState attacking,
-        MatchTeamState defending,
-        Array<FootballMatchEvent> minuteEvents)
-    {
-        Dictionary attackStrengths = attacking.strengths();
-        Dictionary defenseStrengths = defending.strengths();
-        float difference = attackStrengths["attack"].AsSingle() - defenseStrengths["defense"].AsSingle();
-        float chanceProbability = Mathf.Clamp(
-            0.145f + difference * 0.0035f + AttackModifier(attacking.mentality), 0.07f, 0.25f);
-        if (_rng.Randf() >= chanceProbability)
+        if (!use_live_pitch_events || is_finished)
+        {
             return;
+        }
 
-        IncrementStat(attacking, "shots");
-        FootballPlayer? shooter = PickPlayer(attacking, true);
-        string shooterName = shooter?.display_name ?? "Một cầu thủ";
-        float onTargetProbability = Mathf.Clamp(0.38f + difference * 0.005f, 0.24f, 0.58f);
-        if (_rng.Randf() < onTargetProbability)
+        MatchTeamState? state = get_state(teamId);
+        if (state is not null)
         {
-            IncrementStat(attacking, "shots_on_target");
-            float goalProbability = Mathf.Clamp(0.23f + difference * 0.003f, 0.12f, 0.38f);
-            if (_rng.Randf() < goalProbability)
-            {
-                IncrementStat(attacking, "goals");
-                AddEvent(minuteEvents, new FootballMatchEvent().setup(
-                    current_minute, "goal",
-                    $"VÀO! {shooterName} ghi bàn cho {attacking.team.short_name}. Tỷ số là {score_text()}.",
-                    attacking.team.id, shooter?.id ?? new StringName()));
-            }
-            else
-            {
-                AddEvent(minuteEvents, new FootballMatchEvent().setup(
-                    current_minute, "shot_on_target",
-                    $"{shooterName} dứt điểm trúng đích nhưng thủ môn đã cản phá.",
-                    attacking.team.id, shooter?.id ?? new StringName()));
-            }
-        }
-        else if (_rng.Randf() < 0.23f)
-        {
-            IncrementStat(attacking, "corners");
-            AddEvent(minuteEvents, new FootballMatchEvent().setup(
-                current_minute, "corner",
-                $"{attacking.team.short_name} có một quả phạt góc sau cú sút của {shooterName}.",
-                attacking.team.id));
-        }
-        else
-        {
-            AddEvent(minuteEvents, new FootballMatchEvent().setup(
-                current_minute, "shot_off_target",
-                $"{shooterName} dứt điểm chệch khung thành.",
-                attacking.team.id, shooter?.id ?? new StringName()));
+            IncrementStat(state, "passes_attempted");
         }
     }
 
-    private void SimulateFoul(Array<FootballMatchEvent> minuteEvents)
+    public void RegisterLivePassCompletion(StringName teamId)
     {
-        if (_rng.Randf() >= 0.034f)
+        if (!use_live_pitch_events || is_finished)
+        {
             return;
-        MatchTeamState fouling = _rng.Randf() < 0.5f ? home : away;
-        IncrementStat(fouling, "fouls");
-        if (_rng.Randf() >= 0.58f)
+        }
+
+        MatchTeamState? state = get_state(teamId);
+        if (state is not null)
+        {
+            IncrementStat(state, "passes_completed");
+        }
+    }
+
+    public void RegisterLiveFirstTouchError(StringName teamId)
+    {
+        if (!use_live_pitch_events || is_finished)
+        {
             return;
-        IncrementStat(fouling, "yellow_cards");
-        FootballPlayer? player = PickPlayer(fouling, false);
-        AddEvent(minuteEvents, new FootballMatchEvent().setup(
-            current_minute, "yellow_card",
-            $"Thẻ vàng cho {player?.display_name ?? "một cầu thủ"} ({fouling.team.short_name}).",
-            fouling.team.id, player?.id ?? new StringName()));
+        }
+
+        MatchTeamState? state = get_state(teamId);
+        if (state is not null)
+        {
+            IncrementStat(state, "first_touch_errors");
+        }
+    }
+
+    private FootballMatchEvent RegisterCardEvent(
+        MatchTeamState fouling,
+        StringName offenderId,
+        FootballPlayer? victim,
+        StringName card,
+        bool isDelayed)
+    {
+        FootballPlayer? offender = fouling.team.get_player(offenderId);
+        DisciplinaryActionResult result = fouling.ApplyCard(offenderId, card);
+        StringName eventType = result.CardKind is MatchCardKind.SecondYellowRed or MatchCardKind.DirectRed
+            ? "red_card"
+            : "yellow_card";
+        string incident = victim is null
+            ? $"{offender?.display_name ?? "Một cầu thủ"} bị trọng tài xử lý ở lần bóng chết."
+            : $"{offender?.display_name ?? "Một cầu thủ"} phạm lỗi với {victim.display_name}.";
+        string sanction = result.CardKind switch
+        {
+            MatchCardKind.SecondYellowRed => " Thẻ vàng thứ hai, đồng nghĩa thẻ đỏ!",
+            MatchCardKind.DirectRed => " Trọng tài rút thẻ đỏ trực tiếp!",
+            _ => isDelayed ? " Trọng tài quay lại rút thẻ vàng." : " Trọng tài rút thẻ vàng."
+        };
+        var matchEvent = new FootballMatchEvent().setup(
+            current_minute,
+            eventType,
+            incident + sanction,
+            fouling.team.id,
+            offenderId);
+        Record(matchEvent);
+        return matchEvent;
     }
 
     private void SimulateAiSubstitution(MatchTeamState state, Array<FootballMatchEvent> minuteEvents)
@@ -408,26 +446,6 @@ public partial class FootballMatchSimulation : RefCounted
         FootballMatchEvent? matchEvent = make_substitution(state.team.id, outgoing.id, incoming.id);
         if (matchEvent is not null)
             minuteEvents.Add(matchEvent);
-    }
-
-    private FootballPlayer? PickPlayer(MatchTeamState state, bool preferAttackers)
-    {
-        var preferredIds = new Array<StringName>();
-        foreach (Dictionary slot in state.formation.slots)
-        {
-            string role = slot["role"].AsString();
-            bool isAttacker = role is "AM" or "LW" or "RW" or "ST";
-            if (isAttacker != preferAttackers)
-                continue;
-            StringName slotId = slot["id"].AsStringName();
-            if (state.squad.starter_slots.TryGetValue(slotId, out Variant value))
-                preferredIds.Add(value.AsStringName());
-        }
-        if (preferredIds.Count == 0)
-            preferredIds = new Array<StringName>(state.squad.starter_ids);
-        if (preferredIds.Count == 0)
-            return null;
-        return state.team.get_player(preferredIds[_rng.RandiRange(0, preferredIds.Count - 1)]);
     }
 
     private void AddEvent(Array<FootballMatchEvent> minuteEvents, FootballMatchEvent matchEvent)
@@ -443,17 +461,4 @@ public partial class FootballMatchSimulation : RefCounted
     private static void IncrementStat(MatchTeamState state, string key) =>
         state.stats[key] = Stat(state, key) + 1;
 
-    private static float AttackModifier(StringName mentality) => mentality.ToString() switch
-    {
-        "attacking" => 0.035f,
-        "defensive" => -0.025f,
-        _ => 0f
-    };
-
-    private static float PossessionModifier(StringName mentality) => mentality.ToString() switch
-    {
-        "attacking" => 1.04f,
-        "defensive" => 0.96f,
-        _ => 1f
-    };
 }

@@ -12,6 +12,7 @@ public partial class MatchPitch2D
         _ballOwnerId = new StringName();
         _looseBallActive = true;
         _restartPending = false;
+        _runtime.SetPhase(LiveMatchPhase.LooseBall);
         _looseBallVelocityMetersPerSecond = initialVelocityMetersPerSecond;
         _looseBallResolveTime = _visualTime + 0.12f;
         SetAction(description);

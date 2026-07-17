@@ -18,6 +18,11 @@ public partial class MatchPitch2D
             SelectPhasePlayers();
         }
 
+        if (TryStartKickoffPass(ownerId))
+        {
+            return;
+        }
+
         StringName nearestOpponent = NearestOpponent(ownerId);
         float pressureDistanceMeters = nearestOpponent != new StringName()
             ? FootballPitchDimensions.DistanceMeters(CurrentPositions[ownerId], CurrentPositions[nearestOpponent])
@@ -214,7 +219,7 @@ public partial class MatchPitch2D
                 0.05f, 0.42f);
             if (DecisionRoll(defenderId, ownerId, _decisionSerial + 59) < foulChance)
             {
-                ResolveLiveFoul(defenderId, ownerId);
+                ResolveLiveFoul(defenderId, ownerId, distanceMeters);
                 return true;
             }
             return false;
@@ -233,10 +238,12 @@ public partial class MatchPitch2D
         return true;
     }
 
-    private void ResolveLiveFoul(StringName offenderId, StringName victimId)
+    private void ResolveLiveFoul(StringName offenderId, StringName victimId, float contactDistanceMeters)
     {
         if (Simulation is null)
+        {
             return;
+        }
         StringName foulingTeamId = _playerTeams[offenderId];
         StringName victimTeamId = _playerTeams[victimId];
         FootballPlayer? offender = GetPlayer(offenderId);
@@ -248,17 +255,64 @@ public partial class MatchPitch2D
                 ? "yellow"
                 : new StringName();
 
+        bool awardsPenalty = _penaltyAreaRule.IsInsideDefendingPenaltyArea(
+            BallPosition,
+            OwnGoalX(foulingTeamId));
+        bool playsAdvantage = !awardsPenalty && _advantageRuleEvaluator.ShouldPlay(
+            new AdvantageContext(
+                _ballOwnerId == victimId,
+                card,
+                _attackProgress,
+                contactDistanceMeters,
+                DecisionRoll(victimId, offenderId, _decisionSerial + 97)));
+        if (playsAdvantage)
+        {
+            FootballMatchEvent? advantageEvent = Simulation.RegisterLiveAdvantage(
+                foulingTeamId,
+                offenderId,
+                victimId);
+            if (advantageEvent is not null)
+            {
+                EmitSignal(SignalName.LiveMatchEvent, advantageEvent);
+            }
+            if (card == "yellow")
+            {
+                _pendingCardActions.Add(new PendingCardAction(foulingTeamId, offenderId, card));
+            }
+            FoulsCommitted++;
+            GivePossessionTo(victimId, 0.34f);
+            SetAction(card == "yellow"
+                ? $"Lợi thế — {PlayerName(victimId)} tiếp tục bóng, trọng tài sẽ quay lại rút thẻ"
+                : $"Lợi thế — {PlayerName(victimId)} vẫn kiểm soát được bóng");
+            return;
+        }
+
         FootballMatchEvent? foulEvent = Simulation.register_live_foul(
             foulingTeamId, offenderId, victimId, card);
         if (foulEvent is not null)
+        {
             EmitSignal(SignalName.LiveMatchEvent, foulEvent);
+        }
         FoulsCommitted++;
-        if (card == "red")
+        bool isSentOff = Simulation.get_state(foulingTeamId)?.IsSentOff(offenderId) == true;
+        if (isSentOff)
+        {
             SyncLineups(false);
-        ScheduleRestart("free_kick", victimTeamId, BallPosition);
-        SetAction(card == "red"
+        }
+        ScheduleRestart(
+            awardsPenalty ? "penalty" : "free_kick",
+            victimTeamId,
+            awardsPenalty
+                ? _penaltyRestartPlanner.CreatePlan(BallPosition, OwnGoalX(foulingTeamId)).PenaltySpot
+                : BallPosition,
+            allowsQuickRestart: !awardsPenalty && card == new StringName());
+        SetAction(awardsPenalty
+            ? $"PHẠT ĐỀN — {PlayerName(offenderId)} phạm lỗi trong vòng cấm"
+            : isSentOff
             ? $"{PlayerName(offenderId)} bị truất quyền thi đấu"
-            : $"{PlayerName(offenderId)} phạm lỗi với {PlayerName(victimId)}");
+            : card == "yellow"
+                ? $"{PlayerName(offenderId)} nhận thẻ — chờ trọng tài cho thực hiện đá phạt"
+                : $"{PlayerName(offenderId)} phạm lỗi — đội bạn chuẩn bị đưa bóng vào cuộc");
     }
 
     private StringName ChoosePassTarget(bool preferSafe = false) =>

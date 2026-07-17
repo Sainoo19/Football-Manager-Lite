@@ -11,6 +11,7 @@ public static class AttackingRoleTargeter
         Vector2 current = world.Positions[playerId];
         float direction = world.AttackDirection(teamId);
         float progress = BallProgress(world, teamId);
+        bool isFinalThird = progress >= FinalThirdStart;
         float desiredY = current.Y;
         if (progress >= FinalThirdStart && IsWide(current.Y))
         {
@@ -22,9 +23,14 @@ public static class AttackingRoleTargeter
         float[] lateralAdjustments = { -0.04f, 0f, 0.04f };
         foreach (float lateralAdjustment in lateralAdjustments)
         {
+            float targetLane = RoleLaneRules.ConstrainAttackingLane(
+                world.PlayerRoles[playerId],
+                desiredY + lateralAdjustment,
+                isFinalThird,
+                direction);
             Vector2 candidate = SpaceEvaluator.ClampToPitch(new Vector2(
                 current.X + direction * 0.08f,
-                Mathf.Clamp(desiredY + lateralAdjustment, 0.06f, 0.94f)));
+                targetLane));
             float pressure = SpaceEvaluator.OpponentPressure(
                 candidate,
                 teamId,
@@ -50,15 +56,22 @@ public static class AttackingRoleTargeter
     {
         float direction = world.AttackDirection(teamId);
         float baseLane = world.BasePositions[playerId].Y;
-        float[] distancesBehindBall = { 0.08f, 0.13f, 0.18f };
-        float targetX = world.BallPosition.X - direction * distancesBehindBall[supportIndex % 3];
+        float[] distancesBehindBallMeters = { 7f, 11f, 15f };
+        float targetX = world.BallPosition.X - direction *
+            (distancesBehindBallMeters[supportIndex % 3] / FootballPitchDimensions.LengthMeters);
+        float upperSupportLane = world.BallPosition.Y - 7f / FootballPitchDimensions.WidthMeters;
+        float lowerSupportLane = world.BallPosition.Y + 7f / FootballPitchDimensions.WidthMeters;
         float targetY = supportIndex % 3 switch
         {
-            0 => Mathf.Lerp(world.BallPosition.Y, baseLane, 0.55f),
-            1 => Mathf.Lerp(world.BallPosition.Y, 0.5f, 0.45f),
-            _ => Mathf.Lerp(baseLane, 0.5f, 0.18f)
+            0 => upperSupportLane,
+            1 => lowerSupportLane,
+            _ => Mathf.Lerp(baseLane, 0.5f, 0.12f)
         };
-        targetY = ClampRoleLane(world.PlayerRoles[playerId], targetY, false, direction);
+        targetY = RoleLaneRules.ConstrainAttackingLane(
+            world.PlayerRoles[playerId],
+            targetY,
+            false,
+            direction);
         return SpaceEvaluator.ClampToPitch(new Vector2(targetX, targetY));
     }
 
@@ -98,7 +111,11 @@ public static class AttackingRoleTargeter
         float[] laneAdjustments = { 0f, -0.035f, 0.035f };
         foreach (float adjustment in laneAdjustments)
         {
-            float candidateY = ClampRoleLane(role, preferredLane + adjustment, isFinalThird, attackDirection);
+            float candidateY = RoleLaneRules.ConstrainAttackingLane(
+                role,
+                preferredLane + adjustment,
+                isFinalThird,
+                attackDirection);
             Vector2 candidate = SpaceEvaluator.ClampToPitch(new Vector2(targetX, candidateY));
             float pressure = SpaceEvaluator.OpponentPressure(
                 candidate,
@@ -131,7 +148,7 @@ public static class AttackingRoleTargeter
     {
         if (!isFinalThird)
         {
-            return ClampRoleLane(role, baseLane, false, attackDirection);
+            return RoleLaneRules.ConstrainAttackingLane(role, baseLane, false, attackDirection);
         }
 
         return role switch
@@ -144,22 +161,6 @@ public static class AttackingRoleTargeter
             _ => Mathf.Clamp(baseLane, 0.20f, 0.80f)
         };
     }
-
-    private static float ClampRoleLane(
-        string role,
-        float lane,
-        bool isFinalThird,
-        float attackDirection) => role switch
-    {
-        "ST" => Mathf.Clamp(lane, 0.30f, 0.70f),
-        "LW" when !isFinalThird && attackDirection > 0f => Mathf.Clamp(lane, 0.08f, 0.44f),
-        "LW" when !isFinalThird => Mathf.Clamp(lane, 0.56f, 0.92f),
-        "RW" when !isFinalThird && attackDirection > 0f => Mathf.Clamp(lane, 0.56f, 0.92f),
-        "RW" when !isFinalThird => Mathf.Clamp(lane, 0.08f, 0.44f),
-        "LW" or "RW" => Mathf.Clamp(lane, 0.32f, 0.68f),
-        "CM" or "AM" or "DM" => Mathf.Clamp(lane, 0.16f, 0.84f),
-        _ => Mathf.Clamp(lane, 0.06f, 0.94f)
-    };
 
     private static float BallProgress(FootballWorldSnapshot world, StringName teamId)
     {

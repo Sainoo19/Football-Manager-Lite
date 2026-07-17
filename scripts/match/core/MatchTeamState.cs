@@ -12,6 +12,7 @@ public partial class MatchTeamState : RefCounted
     public StringName mentality { get; set; } = new("balanced");
     public int substitutions_used { get; set; }
     public Dictionary stats { get; set; } = new();
+    private readonly PlayerDisciplineLedger _discipline = new();
 
     public MatchTeamState setup(FootballTeam sourceTeam)
     {
@@ -30,12 +31,49 @@ public partial class MatchTeamState : RefCounted
             { "shots", 0 },
             { "shots_on_target", 0 },
             { "corners", 0 },
+            { "penalties", 0 },
             { "fouls", 0 },
             { "yellow_cards", 0 },
             { "red_cards", 0 },
-            { "possession_ticks", 0 }
+            { "possession_ticks", 0 },
+            { "passes_attempted", 0 },
+            { "passes_completed", 0 },
+            { "first_touch_errors", 0 }
         };
+        _discipline.Reset();
         return this;
+    }
+
+    public int YellowCardCount(StringName playerId)
+    {
+        return _discipline.YellowCardCount(playerId);
+    }
+
+    public bool IsSentOff(StringName playerId)
+    {
+        return _discipline.IsSentOff(playerId);
+    }
+
+    public DisciplinaryActionResult ApplyCard(StringName playerId, StringName card)
+    {
+        DisciplinaryActionResult result = card == "red"
+            ? _discipline.ApplyDirectRedCard(playerId)
+            : card == "yellow"
+                ? _discipline.ApplyYellowCard(playerId)
+                : new DisciplinaryActionResult(MatchCardKind.None, YellowCardCount(playerId), false);
+        if (result.CardKind is MatchCardKind.Yellow or MatchCardKind.SecondYellowRed)
+        {
+            stats["yellow_cards"] = stats["yellow_cards"].AsInt32() + 1;
+        }
+        if (result.CardKind is MatchCardKind.SecondYellowRed or MatchCardKind.DirectRed)
+        {
+            stats["red_cards"] = stats["red_cards"].AsInt32() + 1;
+        }
+        if (result.SendsOffPlayer)
+        {
+            send_off(playerId);
+        }
+        return result;
     }
 
     public Dictionary strengths() =>

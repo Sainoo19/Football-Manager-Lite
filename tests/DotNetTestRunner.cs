@@ -13,6 +13,9 @@ public partial class DotNetTestRunner : Node
         {
             TestSquadLimits();
             TestLiveMatchClock();
+            TestFootballFundamentalsRuntimeAndTechnique();
+            TestFreeKickRestartTimingAndDistance();
+            TestPenaltyAdvantageAndDiscipline();
             TestMatchSimulation();
             TestLiveMatchRules();
             TestPitchScaleAndMovementSpeed();
@@ -26,6 +29,7 @@ public partial class DotNetTestRunner : Node
             TestScenarioFactoryAndPitchLauncher();
             TestWideAttackKeepsFootballShape();
             TestPitchPauseAndReset();
+            TestPlaybackSpeedDoesNotChangeFootball();
             TestKickoffGoalResetAndHalfTimeSides();
             TestPitchMovement();
             TestUiIntegration();
@@ -106,6 +110,27 @@ public partial class DotNetTestRunner : Node
             pair.Value.Target.X > 0.85f &&
             pair.Value.Target.Y > 0.86f);
         Check(teammatesInBallCorner == 0, "Không được kéo nhiều đồng đội vào cùng góc sân với người giữ bóng.");
+        Check(
+            planned["away_lb"].Target.Y <= 0.46f && planned["away_rb"].Target.Y >= 0.54f,
+            "LB và RB phải giữ đúng hai hành lang theo hướng tấn công, không tự đổi cánh khi hỗ trợ bóng.");
+        StringName[] attackingOutfield = planned.Keys
+            .Where(id => teams[id] == awayTeamId && roles[id] != "GK")
+            .ToArray();
+        float closestTeammateTargets = float.PositiveInfinity;
+        for (int first = 0; first < attackingOutfield.Length; first++)
+        {
+            for (int second = first + 1; second < attackingOutfield.Length; second++)
+            {
+                closestTeammateTargets = Mathf.Min(
+                    closestTeammateTargets,
+                    FootballPitchDimensions.DistanceMeters(
+                        planned[attackingOutfield[first]].Target,
+                        planned[attackingOutfield[second]].Target));
+            }
+        }
+        Check(
+            closestTeammateTargets >= 5.8f,
+            "Đội tấn công phải tạo góc chuyền thay vì để nhiều mục tiêu di chuyển chụm một điểm.");
 
         StringName[] markedPlayers = planned
             .Where(pair => teams[pair.Key] == homeTeamId && pair.Value.Kind == PlayerIntentKind.MarkOpponent)
@@ -687,12 +712,13 @@ public partial class DotNetTestRunner : Node
     {
         GoalKickRestartPlanner restartPlanner = new();
         Check(
-            GoalKickRestartPlanner.PreparationDurationSeconds >= 2.5f,
+            GoalKickRestartPlanner.PreparationDurationSeconds >= 8f,
             "Phát bóng phải có thời gian bóng chết để hai đội dàn lại vị trí.");
         Check(
             restartPlanner.BallPresentation(0.2f) == GoalKickBallPresentation.OutOfPlayVisible &&
             restartPlanner.BallPresentation(1.0f) == GoalKickBallPresentation.BeingRetrieved &&
-            restartPlanner.BallPresentation(2.4f) == GoalKickBallPresentation.PlacedForRestart,
+            restartPlanner.BallPresentation(5.0f) == GoalKickBallPresentation.BeingRetrieved &&
+            restartPlanner.BallPresentation(6.2f) == GoalKickBallPresentation.PlacedForRestart,
             "Bóng ra ngoài phải chờ được nhặt hoặc đưa bóng mới vào trước khi xuất hiện ở vị trí phát bóng.");
         Vector2 goalkeeperTarget = restartPlanner.PositionTarget(
             new Vector2(0.04f, 0.50f),
@@ -1094,6 +1120,48 @@ public partial class DotNetTestRunner : Node
         GD.Print("PASS: chưa bắt đầu, tạm dừng và tạo trận mới đều đóng băng/reset sân đúng cách.");
     }
 
+    private void TestPlaybackSpeedDoesNotChangeFootball()
+    {
+        Array<FootballTeam> teams = new SampleDataFactory().create_teams();
+        FootballMatchSimulation realTimeSimulation = new FootballMatchSimulation().setup(teams[0], teams[1], 909);
+        FootballMatchSimulation fastSimulation = new FootballMatchSimulation().setup(teams[0], teams[1], 909);
+        realTimeSimulation.use_live_pitch_events = true;
+        fastSimulation.use_live_pitch_events = true;
+
+        LiveMatchRuntime realTimeRuntime = new();
+        LiveMatchRuntime fastRuntime = new();
+        realTimeRuntime.SetSpeed(MatchPlaybackSpeed.RealTime);
+        fastRuntime.SetSpeed(MatchPlaybackSpeed.Fast);
+        MatchPitch2D realTimePitch = new();
+        MatchPitch2D fastPitch = new();
+        AddChild(realTimePitch);
+        AddChild(fastPitch);
+        realTimePitch.AttachRuntime(realTimeRuntime);
+        fastPitch.AttachRuntime(fastRuntime);
+        realTimePitch.SetMatch(realTimeSimulation);
+        fastPitch.SetMatch(fastSimulation);
+        realTimePitch.SetPlaying(true);
+        fastPitch.SetPlaying(true);
+        realTimeRuntime.Start();
+        fastRuntime.Start();
+
+        realTimeRuntime.Advance(0.60d);
+        fastRuntime.Advance(0.0028d);
+        realTimePitch.AdvanceGameTime(realTimeRuntime.LastAdvancedGameSeconds);
+        fastPitch.AdvanceGameTime(fastRuntime.LastAdvancedGameSeconds);
+        Check(
+            Math.Abs(realTimeRuntime.LastAdvancedGameSeconds - fastRuntime.LastAdvancedGameSeconds) < 0.0001d,
+            "Hai tốc độ phải truyền cùng lượng game-time khi quy đổi tương đương.");
+        Check(
+            realTimePitch.CurrentPositions.All(pair =>
+                pair.Value.DistanceTo(fastPitch.CurrentPositions[pair.Key]) < 0.0001f) &&
+            realTimePitch.BallPosition.DistanceTo(fastPitch.BallPosition) < 0.0001f,
+            "Tăng tốc chỉ được thay thời gian chờ ngoài đời, không được thay kết quả bóng đá của cùng một seed.");
+        realTimePitch.QueueFree();
+        fastPitch.QueueFree();
+        GD.Print("PASS: realtime và fast-forward dùng chung game-time nên cho cùng diễn biến với cùng seed.");
+    }
+
     private void TestKickoffGoalResetAndHalfTimeSides()
     {
         Array<FootballTeam> teams = new SampleDataFactory().create_teams();
@@ -1109,6 +1177,18 @@ public partial class DotNetTestRunner : Node
             "Đội khách phải đứng trong phần sân nhà trước lúc giao bóng.");
         Check(pitch.BallPosition.IsEqualApprox(new Vector2(0.5f, 0.5f)),
             "Bóng phải nằm ở chấm giữa sân trước trận đấu.");
+        Check(
+            pitch.IsKickoffPassPending && pitch.KickoffReceiverId != new StringName(),
+            "Giao bóng phải chuẩn bị sẵn người nhận đường chuyền mở màn.");
+        pitch.SetPlaying(true);
+        pitch._Process(0.40d);
+        Check(
+            !pitch.IsKickoffPassPending &&
+            pitch.IsBallInFlight &&
+            pitch.BallFlightTarget.X > pitch.BallFlightStart.X &&
+            pitch.LastActionName.Contains("chuyền bóng về"),
+            "Cầu thủ giao bóng phải chuyền về phần sân nhà trước, không được tự dẫn bóng lao lên.");
+        pitch.SetPlaying(false);
 
         foreach (StringName playerId in pitch.CurrentPositions.Keys.ToArray())
         {
@@ -1122,6 +1202,7 @@ public partial class DotNetTestRunner : Node
             simulation.home.squad.starter_ids[^1]);
         pitch.AnimateMinute(new Array<FootballMatchEvent> { goalEvent });
         Check(pitch.PendingRestartType == "kickoff", "Sau bàn thắng phải chờ đội thủng lưới giao bóng lại.");
+        Check(pitch.IsKickoffPassPending, "Sau bàn thắng, lần giao bóng mới cũng phải bắt đầu bằng một đường chuyền.");
         CheckTeamIsInOwnHalf(pitch, simulation.home.squad.starter_ids, false,
             "Sau bàn thắng, đội chủ nhà phải trở lại phần sân của mình.");
         CheckTeamIsInOwnHalf(pitch, simulation.away.squad.starter_ids, true,
@@ -1297,6 +1378,246 @@ public partial class DotNetTestRunner : Node
         GD.Print("PASS: đồng hồ trận đấu hỗ trợ thời gian thực, pause/resume và các tốc độ nhanh.");
     }
 
+    private static void TestFootballFundamentalsRuntimeAndTechnique()
+    {
+        LiveMatchRuntime runtime = new();
+        runtime.SetSpeed(MatchPlaybackSpeed.Fast);
+        runtime.Start();
+        int elapsedMinutes = runtime.Advance(0.28d);
+        Check(
+            elapsedMinutes == 1 && Math.Abs(runtime.LastAdvancedGameSeconds - 60d) < 0.01d,
+            $"Runtime phải cung cấp đúng lượng giây game cho sân 2D ở mọi tốc độ phát lại; " +
+            $"phút={elapsedMinutes}, delta={runtime.LastAdvancedGameSeconds:0.000000}.");
+        runtime.SetPhase(LiveMatchPhase.BallInFlight);
+        Check(runtime.Phase == LiveMatchPhase.BallInFlight, "Runtime phải giữ trạng thái pha bóng rõ ràng.");
+        runtime.SetPhase(LiveMatchPhase.FullTime);
+        Check(!runtime.IsRunning, "Trạng thái hết trận phải dừng runtime duy nhất của trận đấu.");
+
+        PassExecutionResolver passResolver = new();
+        Vector2 ball = new(0.25f, 0.50f);
+        Vector2 intendedTarget = new(0.62f, 0.36f);
+        PassExecution elitePass = passResolver.Resolve(
+            ball,
+            intendedTarget,
+            LivePassType.ThroughBall,
+            92,
+            92,
+            90,
+            82,
+            7f,
+            0.86f,
+            0.14f);
+        PassExecution poorPressuredPass = passResolver.Resolve(
+            ball,
+            intendedTarget,
+            LivePassType.ThroughBall,
+            38,
+            40,
+            35,
+            45,
+            1.2f,
+            0.86f,
+            0.14f);
+        float eliteError = FootballPitchDimensions.DistanceMeters(elitePass.IntendedTarget, elitePass.ActualTarget);
+        float poorError = FootballPitchDimensions.DistanceMeters(
+            poorPressuredPass.IntendedTarget,
+            poorPressuredPass.ActualTarget);
+        Check(
+            elitePass.Quality > poorPressuredPass.Quality && eliteError < poorError,
+            "Chất lượng, áp lực và khoảng cách phải biến ý định chuyền thành sai số kỹ thuật có nguyên nhân.");
+        PassExecution repeatedElitePass = passResolver.Resolve(
+            ball,
+            intendedTarget,
+            LivePassType.ThroughBall,
+            92,
+            92,
+            90,
+            82,
+            7f,
+            0.86f,
+            0.14f);
+        Check(
+            repeatedElitePass.ActualTarget.IsEqualApprox(elitePass.ActualTarget),
+            "Thực thi đường chuyền phải deterministic khi đầu vào và roll giống nhau.");
+
+        FirstTouchResolver firstTouchResolver = new();
+        FirstTouchResolution eliteTouch = firstTouchResolver.Resolve(
+            92,
+            91,
+            90,
+            82,
+            6f,
+            18f,
+            LivePassType.ThroughBall,
+            0.80f,
+            0.50f);
+        FirstTouchResolution poorTouch = firstTouchResolver.Resolve(
+            35,
+            38,
+            32,
+            40,
+            1.1f,
+            24f,
+            LivePassType.Cross,
+            0.80f,
+            0.90f);
+        Check(
+            eliteTouch.Outcome == FirstTouchOutcome.Controlled && poorTouch.Outcome != FirstTouchOutcome.Controlled,
+            "Đỡ bước một phải phụ thuộc kỹ thuật, độ khó bóng đến và áp lực đối phương.");
+        GD.Print("PASS: runtime duy nhất, pipeline thực thi chuyền và đỡ bước một phản ánh kỹ năng cùng áp lực.");
+    }
+
+    private static void TestFreeKickRestartTimingAndDistance()
+    {
+        FreeKickRestartPlanner planner = new();
+        Vector2 ballStart = new(0.42f, 0.38f);
+        Vector2 restartPosition = new(0.55f, 0.52f);
+        FreeKickRestartPlan ceremonial = planner.CreatePlan(
+            ballStart,
+            restartPosition,
+            false,
+            0.01f);
+        Check(
+            !ceremonial.IsQuick && ceremonial.PreparationDurationSeconds >= 5f,
+            "Đá phạt có còi phải có đủ thời gian đặt bóng và dàn vị trí.");
+        Check(
+            ceremonial.BallPositionAt(0.4f).IsEqualApprox(ballStart),
+            "Ngay khi trọng tài thổi phạt, bóng phải còn ở vị trí cũ thay vì teleport.");
+        Vector2 movingBall = ceremonial.BallPositionAt(2f);
+        Check(
+            !movingBall.IsEqualApprox(ballStart) && !movingBall.IsEqualApprox(restartPosition),
+            "Trong thời gian chờ, bóng phải được đưa dần tới điểm đá phạt.");
+        Check(
+            ceremonial.BallPositionAt(3.3f).IsEqualApprox(restartPosition) &&
+            ceremonial.IsBallPlaced(3.3f),
+            "Bóng chỉ được nằm đúng điểm phạm lỗi sau giai đoạn đặt bóng.");
+
+        FreeKickRestartPlan quick = planner.CreatePlan(
+            ballStart,
+            restartPosition,
+            true,
+            0.10f);
+        Check(
+            quick.IsQuick &&
+            quick.PreparationDurationSeconds < ceremonial.PreparationDurationSeconds &&
+            quick.PreparationDurationSeconds >= 1.5f,
+            "Đá phạt nhanh phải nhanh hơn nhưng không được bắt đầu tức thì.");
+        FreeKickRestartPlan declinedQuick = planner.CreatePlan(
+            ballStart,
+            restartPosition,
+            true,
+            0.90f);
+        Check(
+            !declinedQuick.IsQuick,
+            "Cho phép đá nhanh không có nghĩa mọi tình huống đều bắt buộc đá nhanh.");
+
+        Vector2 closeDefender = new(
+            restartPosition.X + 2f / FootballPitchDimensions.LengthMeters,
+            restartPosition.Y);
+        Vector2 legalDefender = planner.EnsureRequiredDefenderDistance(
+            closeDefender,
+            restartPosition,
+            false);
+        Check(
+            FootballPitchDimensions.DistanceMeters(legalDefender, restartPosition) >= 9.14f,
+            "Khi chờ còi, đối phương phải lùi đủ 9,15 m khỏi điểm đá phạt.");
+        Check(
+            planner.EnsureRequiredDefenderDistance(closeDefender, restartPosition, true)
+                .IsEqualApprox(closeDefender),
+            "Đá phạt nhanh không được chờ engine cưỡng chế hàng rào rồi mới thực hiện.");
+        GD.Print("PASS: đá phạt có thời gian đặt bóng, tùy chọn đá nhanh và cự ly phòng ngự 9,15 m.");
+    }
+
+    private static void TestPenaltyAdvantageAndDiscipline()
+    {
+        PenaltyAreaRule penaltyAreaRule = new();
+        Check(
+            penaltyAreaRule.IsInsideDefendingPenaltyArea(new Vector2(0.10f, 0.50f), 0.015f) &&
+            penaltyAreaRule.IsInsideDefendingPenaltyArea(new Vector2(0.90f, 0.50f), 0.985f),
+            "Phạm lỗi trong vòng cấm ở cả hai đầu sân phải được nhận diện là penalty.");
+        Check(
+            !penaltyAreaRule.IsInsideDefendingPenaltyArea(new Vector2(0.30f, 0.50f), 0.015f) &&
+            !penaltyAreaRule.IsInsideDefendingPenaltyArea(new Vector2(0.10f, 0.90f), 0.015f),
+            "Phạm lỗi ngoài chiều sâu hoặc ngoài bề rộng vòng cấm không được biến thành penalty.");
+
+        PenaltyRestartPlanner penaltyRestartPlanner = new();
+        PenaltyRestartPlan penaltyPlan = penaltyRestartPlanner.CreatePlan(new Vector2(0.22f, 0.62f), 0.015f);
+        Check(
+            Mathf.IsEqualApprox(
+                penaltyPlan.PenaltySpot.X * FootballPitchDimensions.LengthMeters,
+                FootballPitchDimensions.PenaltySpotDistanceMeters),
+            "Bóng penalty phải được đặt đúng 11 m từ đường biên ngang.");
+        Check(
+            penaltyPlan.BallPositionAt(0.8f).IsEqualApprox(penaltyPlan.BallStart) &&
+            penaltyPlan.IsBallPlaced(PenaltyRestartPlanner.BallPlacedAfterSeconds + 0.1f) &&
+            PenaltyRestartPlanner.PreparationDurationSeconds >= 7f,
+            "Penalty phải có thời gian trọng tài đặt bóng và dàn cầu thủ, không được thực hiện tức thì.");
+        Vector2 stagedPlayer = penaltyRestartPlanner.EnsureOutsidePenaltyAreaAndArc(
+            new Vector2(0.08f, 0.50f),
+            penaltyPlan.PenaltySpot,
+            0.015f);
+        Check(
+            !penaltyAreaRule.IsInsideDefendingPenaltyArea(stagedPlayer, 0.015f) &&
+            FootballPitchDimensions.DistanceMeters(stagedPlayer, penaltyPlan.PenaltySpot) >= 9.14f,
+            "Ngoài người sút và thủ môn, cầu thủ phải đứng ngoài vòng cấm và cách bóng 9,15 m.");
+
+        PenaltyKickResolver penaltyKickResolver = new();
+        Check(
+            penaltyKickResolver.Resolve(90, 92, 82, 75, 70, 0.10f, 0.10f) == PenaltyKickOutcome.Goal &&
+            penaltyKickResolver.Resolve(35, 30, 40, 80, 75, 0.99f, 0.20f) == PenaltyKickOutcome.OffTarget,
+            "Penalty phải phụ thuộc khả năng dứt điểm, bình tĩnh, thủ môn và roll xác định.");
+
+        AdvantageRuleEvaluator advantageRule = new();
+        Check(
+            advantageRule.ShouldPlay(new AdvantageContext(true, new StringName(), 0.76f, 3.5f, 0.10f)),
+            "Trọng tài nên cho lợi thế khi đội tấn công còn bóng trong tình huống thuận lợi.");
+        Check(
+            !advantageRule.ShouldPlay(new AdvantageContext(true, "red", 0.80f, 4f, 0.01f)) &&
+            !advantageRule.ShouldPlay(new AdvantageContext(true, new StringName(), 0.20f, 4f, 0.01f)),
+            "Không được cho lợi thế với thẻ đỏ trực tiếp hoặc pha bóng không đem lại lợi ích tấn công.");
+
+        Array<FootballTeam> teams = new SampleDataFactory().create_teams();
+        FootballMatchSimulation disciplineMatch = new FootballMatchSimulation().setup(teams[0], teams[1], 817);
+        disciplineMatch.use_live_pitch_events = true;
+        StringName offenderId = disciplineMatch.home.squad.starter_ids[1];
+        StringName victimId = disciplineMatch.away.squad.starter_ids[1];
+        Check(
+            disciplineMatch.register_live_foul(teams[0].id, offenderId, victimId, "yellow")?.event_type ==
+            "yellow_card",
+            "Thẻ vàng đầu tiên phải được ghi cho đúng cầu thủ.");
+        Check(
+            disciplineMatch.register_live_foul(teams[0].id, offenderId, victimId, "yellow")?.event_type ==
+            "red_card",
+            "Thẻ vàng thứ hai của cùng cầu thủ phải tự động trở thành thẻ đỏ.");
+        Check(
+            disciplineMatch.home.YellowCardCount(offenderId) == 2 &&
+            disciplineMatch.home.stats["yellow_cards"].AsInt32() == 2 &&
+            disciplineMatch.home.stats["red_cards"].AsInt32() == 1 &&
+            disciplineMatch.home.squad.starter_ids.Count == 10,
+            "Kỷ luật phải lưu theo cầu thủ và loại cầu thủ nhận hai thẻ vàng khỏi sân.");
+
+        FootballMatchSimulation advantageMatch = new FootballMatchSimulation().setup(teams[0], teams[1], 819);
+        advantageMatch.use_live_pitch_events = true;
+        StringName delayedOffenderId = advantageMatch.home.squad.starter_ids[2];
+        Check(
+            advantageMatch.RegisterLiveAdvantage(teams[0].id, delayedOffenderId, victimId)?.event_type ==
+            "advantage",
+            "Pha lợi thế phải được ghi nhận mà chưa dừng trận.");
+        Check(
+            advantageMatch.RegisterLiveDelayedCard(teams[0].id, delayedOffenderId, "yellow")?.event_type ==
+            "yellow_card",
+            "Khi bóng chết, trọng tài phải quay lại rút thẻ đã hoãn.");
+        Check(
+            advantageMatch.home.stats["fouls"].AsInt32() == 1 &&
+            advantageMatch.home.stats["yellow_cards"].AsInt32() == 1,
+            "Lợi thế và thẻ hoãn không được cộng trùng số lần phạm lỗi.");
+        Check(
+            advantageMatch.register_live_restart(teams[1].id, "penalty")?.event_type == "penalty" &&
+            advantageMatch.away.stats["penalties"].AsInt32() == 1,
+            "Live match phải ghi nhận penalty cho đúng đội.");
+        GD.Print("PASS: penalty, lợi thế, thẻ hoãn và hai vàng thành đỏ hoạt động theo luật nền tảng.");
+    }
+
     private static void TestSquadLimits()
     {
         var players = new Array<FootballPlayer>();
@@ -1388,10 +1709,19 @@ public partial class DotNetTestRunner : Node
             simulation.RegisterLiveOffside(teams[1].id, victim)?.event_type == "offside",
             "Sân 2D phải ghi nhận được lỗi việt vị.");
         Check(simulation.register_live_shot(teams[1].id, simulation.away.squad.starter_ids[8], "parried", simulation.home.squad.starter_ids[0]) is not null, "Thủ môn đẩy bóng phải được ghi nhận là cú sút trúng đích.");
+        simulation.RegisterLivePassAttempt(teams[1].id);
+        simulation.RegisterLivePassAttempt(teams[1].id);
+        simulation.RegisterLivePassCompletion(teams[1].id);
+        simulation.RegisterLiveFirstTouchError(teams[1].id);
         Check(simulation.register_live_foul(teams[0].id, redOffender, victim, "red")?.event_type == "red_card", "Phạm lỗi ngăn cơ hội phải tạo thẻ đỏ.");
         Check(simulation.home.stats["fouls"].AsInt32() == 2, "Thống kê phải nhận phạm lỗi từ sân 2D.");
         Check(simulation.home.stats["yellow_cards"].AsInt32() == 1 && simulation.home.stats["red_cards"].AsInt32() == 1, "Thẻ vàng và đỏ phải được thống kê.");
         Check(simulation.away.stats["corners"].AsInt32() == 1, "Phạt góc phải được cộng cho đúng đội.");
+        Check(
+            simulation.away.stats["passes_attempted"].AsInt32() == 2 &&
+            simulation.away.stats["passes_completed"].AsInt32() == 1 &&
+            simulation.away.stats["first_touch_errors"].AsInt32() == 1,
+            "Live engine phải ghi được số đường chuyền, chuyền thành công và lỗi đỡ bước một để hiệu chỉnh trận đấu.");
         Check(simulation.home.squad.starter_ids.Count == 10, "Cầu thủ nhận thẻ đỏ phải rời sân.");
         int liveFouls = simulation.home.stats["fouls"].AsInt32() + simulation.away.stats["fouls"].AsInt32();
         for (int minute = 0; minute < 10; minute++) simulation.advance_minute();

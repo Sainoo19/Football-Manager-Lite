@@ -3,7 +3,7 @@ using Godot;
 
 public static class TeamSpacingResolver
 {
-    private const float MinimumSpacingMeters = 5.5f;
+    private const float MinimumSpacingMeters = 6.5f;
     private const int ResolutionIterations = 4;
 
     public static void Resolve(
@@ -62,11 +62,11 @@ public static class TeamSpacingResolver
         float secondPush = secondAnchored ? 0f : firstAnchored ? missingDistance : missingDistance * 0.5f;
         if (firstPush > 0f)
         {
-            intents[firstId] = WithTarget(firstIntent, firstMeters - direction * firstPush);
+            intents[firstId] = WithTarget(world, firstId, firstIntent, firstMeters - direction * firstPush);
         }
         if (secondPush > 0f)
         {
-            intents[secondId] = WithTarget(secondIntent, secondMeters + direction * secondPush);
+            intents[secondId] = WithTarget(world, secondId, secondIntent, secondMeters + direction * secondPush);
         }
     }
 
@@ -87,11 +87,31 @@ public static class TeamSpacingResolver
             : Vector2.Up;
     }
 
-    private static PlayerIntent WithTarget(PlayerIntent intent, Vector2 targetMeters)
+    private static PlayerIntent WithTarget(
+        FootballWorldSnapshot world,
+        StringName playerId,
+        PlayerIntent intent,
+        Vector2 targetMeters)
     {
+        Vector2 normalizedTarget = SpaceEvaluator.ClampToPitch(
+            FootballPitchDimensions.ToNormalized(targetMeters));
+        if (intent.TeamPhase is LiveTeamPhase.InPossession or LiveTeamPhase.BallInFlight)
+        {
+            StringName teamId = world.PlayerTeams[playerId];
+            float attackDirection = world.AttackDirection(teamId);
+            float attackProgress = attackDirection > 0f
+                ? world.BallPosition.X
+                : 1f - world.BallPosition.X;
+            normalizedTarget.Y = RoleLaneRules.ConstrainAttackingLane(
+                world.PlayerRoles[playerId],
+                normalizedTarget.Y,
+                attackProgress >= 0.66f,
+                attackDirection);
+        }
+
         return new PlayerIntent(
             intent.Kind,
-            SpaceEvaluator.ClampToPitch(FootballPitchDimensions.ToNormalized(targetMeters)),
+            normalizedTarget,
             intent.TeamPhase,
             intent.RelatedPlayerId);
     }

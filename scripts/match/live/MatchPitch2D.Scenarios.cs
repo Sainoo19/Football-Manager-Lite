@@ -113,6 +113,10 @@ public partial class MatchPitch2D
         _looseBallVelocityMetersPerSecond = Vector2.Zero;
         _restartPending = false;
         _restartType = new StringName();
+        _freeKickRestartPlan = default;
+        _restartTakerId = new StringName();
+        _kickoffPassPending = false;
+        _kickoffReceiverId = new StringName();
         ResetCarrySequence();
         _isBallVisible = true;
         _restartBallPlaced = true;
