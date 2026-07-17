@@ -20,15 +20,18 @@ public sealed class ShotOutcomeResolver
         float distanceMeters,
         float angleFactor,
         float pressureDistanceMeters,
+        float goalkeeperCoverage,
         float accuracyRoll,
         float goalRoll,
         float handlingRoll,
         float cornerRoll)
     {
+        goalkeeperCoverage = Mathf.Clamp(goalkeeperCoverage, 0f, 1f);
         float distanceFactor = Mathf.Clamp((distanceMeters - 8f) / 26f, 0f, 1f);
         float onTargetChance = Mathf.Lerp(0.74f, 0.20f, distanceFactor) +
                                (finishing - 65) / 180f -
-                               angleFactor * 0.22f;
+                               angleFactor * 0.22f +
+                               (1f - goalkeeperCoverage) * 0.16f;
         if (pressureDistanceMeters < 2.2f)
         {
             onTargetChance -= 0.12f;
@@ -37,7 +40,8 @@ public sealed class ShotOutcomeResolver
         {
             onTargetChance -= 0.05f;
         }
-        if (accuracyRoll > Mathf.Clamp(onTargetChance, 0.12f, 0.82f))
+        float maximumOnTargetChance = Mathf.Lerp(0.94f, 0.82f, goalkeeperCoverage);
+        if (accuracyRoll > Mathf.Clamp(onTargetChance, 0.12f, maximumOnTargetChance))
         {
             return ShotOutcome.OffTarget;
         }
@@ -47,12 +51,14 @@ public sealed class ShotOutcomeResolver
         float goalDistanceFactor = Mathf.Clamp((distanceMeters - 7f) / 25f, 0f, 1f);
         float goalChance = Mathf.Lerp(0.36f, 0.035f, goalDistanceFactor) +
                            (shotQuality - keeperQuality) / 260f -
-                           angleFactor * 0.16f;
+                           angleFactor * 0.16f +
+                           (1f - goalkeeperCoverage) * 0.36f;
         if (pressureDistanceMeters < 2.2f)
         {
             goalChance -= 0.06f;
         }
-        if (goalRoll < Mathf.Clamp(goalChance, 0.015f, 0.52f))
+        float maximumGoalChance = Mathf.Lerp(0.78f, 0.52f, goalkeeperCoverage);
+        if (goalRoll < Mathf.Clamp(goalChance, 0.015f, maximumGoalChance))
         {
             return ShotOutcome.Goal;
         }

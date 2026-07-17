@@ -32,9 +32,14 @@ public sealed class MatchSideController
         return AttackDirection(teamId, homeTeamId) > 0f ? 0.994f : 0.006f;
     }
 
-    public bool ShouldMirrorFormation(StringName teamId, StringName homeTeamId)
+    public Vector2 FormationPosition(
+        float lateralPosition,
+        float depthPosition,
+        StringName teamId,
+        StringName homeTeamId)
     {
-        bool isHomeTeam = teamId == homeTeamId;
-        return isHomeTeam ? AreSidesSwitched : !AreSidesSwitched;
+        return AttackDirection(teamId, homeTeamId) < 0f
+            ? new Vector2(depthPosition, 1f - lateralPosition)
+            : new Vector2(1f - depthPosition, lateralPosition);
     }
 }

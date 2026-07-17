@@ -95,7 +95,12 @@ public partial class MatchPitch2D
         Vector2 runTarget = TargetPositions.GetValueOrDefault(receiverId, receiverPosition);
         BallActionKind kind = requestedKind;
         float receiverDistanceMeters = FootballPitchDimensions.DistanceMeters(BallPosition, receiverPosition);
-        if (kind == BallActionKind.Pass && receiverId == _primaryRunnerId && receiverDistanceMeters > 17f)
+        float forwardGainMeters = AttackDirection(_activeTeamId) * (receiverPosition.X - BallPosition.X) *
+                                  FootballPitchDimensions.LengthMeters;
+        if (kind == BallActionKind.Pass &&
+            receiverId == _primaryRunnerId &&
+            receiverDistanceMeters > 17f &&
+            forwardGainMeters >= 4f)
         {
             kind = BallActionKind.ThroughBall;
         }
@@ -121,6 +126,7 @@ public partial class MatchPitch2D
             receiverPosition,
             runTarget,
             passType);
+        ResetCarrySequence();
         _lastPassTime = _visualTime;
         _decisionVarietyTracker.RecordPassTarget(receiverId);
         bool receiverIsOffside = _offsideRule.IsOffside(
@@ -148,6 +154,7 @@ public partial class MatchPitch2D
 
     private void StartBallAction(Vector2 destination, float duration, float arc, StringName nextOwner, BallActionKind kind = BallActionKind.Pass)
     {
+        _isBallVisible = true;
         _actionSourceId = _ballOwnerId;
         _actionSourceTeamId = _actionSourceId != new StringName() && _playerTeams.ContainsKey(_actionSourceId) ? _playerTeams[_actionSourceId] : _activeTeamId;
         _ballActionActive = true;

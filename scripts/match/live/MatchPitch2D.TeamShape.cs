@@ -151,14 +151,15 @@ public partial class MatchPitch2D
         }
 
         HashSet<StringName> valid = new();
+        StringName homeTeamId = Simulation.home.team.id;
         SyncTeam(
             Simulation.home,
-            _sideController.ShouldMirrorFormation(Simulation.home.team.id, Simulation.home.team.id),
+            homeTeamId,
             valid,
             reset);
         SyncTeam(
             Simulation.away,
-            _sideController.ShouldMirrorFormation(Simulation.away.team.id, Simulation.home.team.id),
+            homeTeamId,
             valid,
             reset);
 
@@ -180,12 +181,17 @@ public partial class MatchPitch2D
             _playerRoles.Remove(playerId);
             _playerSlotIds.Remove(playerId);
             _playerPaces.Remove(playerId);
+            _playerNumbers.Remove(playerId);
             _playerIntents.Remove(playerId);
             _movementController.RemovePlayer(playerId);
         }
     }
 
-    private void SyncTeam(MatchTeamState state, bool mirrored, HashSet<StringName> valid, bool reset)
+    private void SyncTeam(
+        MatchTeamState state,
+        StringName homeTeamId,
+        HashSet<StringName> valid,
+        bool reset)
     {
         foreach (Dictionary slot in state.formation.slots)
         {
@@ -196,11 +202,11 @@ public partial class MatchPitch2D
             }
 
             StringName playerId = value.AsStringName();
-            Vector2 basePosition = new(slot["y"].AsSingle(), slot["x"].AsSingle());
-            if (mirrored)
-            {
-                basePosition = new Vector2(1f - basePosition.X, 1f - basePosition.Y);
-            }
+            Vector2 basePosition = _sideController.FormationPosition(
+                slot["x"].AsSingle(),
+                slot["y"].AsSingle(),
+                state.team.id,
+                homeTeamId);
 
             valid.Add(playerId);
             BasePositions[playerId] = basePosition;
@@ -209,6 +215,7 @@ public partial class MatchPitch2D
             _playerRoles[playerId] = slot["role"].AsString();
             _playerSlotIds[playerId] = slotId;
             _playerPaces[playerId] = state.team.get_player(playerId)?.pace ?? 50;
+            _playerNumbers[playerId] = SquadNumber(state.team, playerId);
             _movementController.EnsurePlayer(playerId);
 
             if (reset || !CurrentPositions.ContainsKey(playerId))
@@ -217,6 +224,25 @@ public partial class MatchPitch2D
                 CurrentPositions[playerId] = previous == Vector2.Zero ? basePosition : previous;
             }
         }
+    }
+
+    private static int SquadNumber(FootballTeam team, StringName playerId)
+    {
+        FootballPlayer? player = team.get_player(playerId);
+        if (player is not null && player.SquadNumber > 0)
+        {
+            return player.SquadNumber;
+        }
+
+        for (int index = 0; index < team.players.Count; index++)
+        {
+            if (team.players[index].id == playerId)
+            {
+                return index + 1;
+            }
+        }
+
+        return 0;
     }
 
     private Vector2 PositionForReplacedSlot(StringName teamId, StringName slotId)

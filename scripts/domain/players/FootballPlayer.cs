@@ -9,6 +9,7 @@ public partial class FootballPlayer : Resource
     [Export] public string position { get; set; } = "CM";
     [Export] public int age { get; set; } = 18;
     [Export] public string nationality { get; set; } = "";
+    [Export(PropertyHint.Range, "1,99")] public int SquadNumber { get; set; }
     [Export(PropertyHint.Range, "1,99")] public int overall { get; set; } = 50;
     [Export(PropertyHint.Range, "0,100")] public int fitness { get; set; } = 100;
     [Export(PropertyHint.Range, "0,100")] public int form { get; set; } = 50;

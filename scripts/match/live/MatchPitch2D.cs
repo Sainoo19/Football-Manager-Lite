@@ -6,6 +6,7 @@ using TeamDictionary = System.Collections.Generic.Dictionary<Godot.StringName, G
 using RoleDictionary = System.Collections.Generic.Dictionary<Godot.StringName, string>;
 using IntentDictionary = System.Collections.Generic.Dictionary<Godot.StringName, PlayerIntent>;
 using PaceDictionary = System.Collections.Generic.Dictionary<Godot.StringName, int>;
+using NumberDictionary = System.Collections.Generic.Dictionary<Godot.StringName, int>;
 
 [GlobalClass]
 public partial class MatchPitch2D : Control
@@ -35,6 +36,7 @@ public partial class MatchPitch2D : Control
     private readonly RoleDictionary _playerRoles = new();
     private readonly TeamDictionary _playerSlotIds = new();
     private readonly PaceDictionary _playerPaces = new();
+    private readonly NumberDictionary _playerNumbers = new();
     private readonly FootballIntentPlanner _intentPlanner = new();
     private readonly FootballMovementController _movementController = new();
     private readonly MatchSideController _sideController = new();
@@ -43,6 +45,7 @@ public partial class MatchPitch2D : Control
     private readonly RollingBallPhysics _rollingBallPhysics = new();
     private readonly ShotDecisionEvaluator _shotDecisionEvaluator = new();
     private readonly ShotOutcomeResolver _shotOutcomeResolver = new();
+    private readonly ShotTargetPlanner _shotTargetPlanner = new();
     private readonly TraditionalGoalkeeperPlanner _traditionalGoalkeeperPlanner = new();
     private readonly DirectAttackContinuationPlanner _directAttackContinuationPlanner = new();
     private readonly GoalKickRestartPlanner _goalKickRestartPlanner = new();
@@ -51,6 +54,8 @@ public partial class MatchPitch2D : Control
     private readonly MatchScenarioFactory _matchScenarioFactory = new();
     private readonly ThroughBallTargetPlanner _throughBallTargetPlanner = new();
     private readonly PassOptionEvaluator _passOptionEvaluator = new();
+    private readonly BallCarrierDecisionEvaluator _ballCarrierDecisionEvaluator = new();
+    private readonly ClearanceTargetPlanner _clearanceTargetPlanner = new();
     private readonly DuelDistanceRules _duelDistanceRules = new();
     private readonly IntentDictionary _playerIntents = new();
     private readonly HashSet<StringName> _interceptionAttemptedBy = new();
@@ -73,6 +78,8 @@ public partial class MatchPitch2D : Control
     private int _decisionSerial;
     private uint _liveDecisionSeed;
     private int _decisionsSinceShot;
+    private StringName _carryOwnerId = new();
+    private int _consecutiveCarries;
     private StringName _pendingShotOutcome = new();
     private StringName _pendingShotShooterId = new();
     private StringName _pendingShotGoalkeeperId = new();
@@ -87,7 +94,10 @@ public partial class MatchPitch2D : Control
     private StringName _restartType = new();
     private StringName _restartTeamId = new();
     private Vector2 _restartPosition;
+    private float _restartScheduledTime;
     private float _restartExecuteTime;
+    private bool _isBallVisible = true;
+    private bool _restartBallPlaced = true;
     private float _nextIntentPlanTime;
 
     public string LastActionName { get; private set; } = "Chuẩn bị giao bóng";
@@ -105,6 +115,8 @@ public partial class MatchPitch2D : Control
     public StringName PendingRestartType => _restartPending ? _restartType : new StringName();
     public bool IsBallInFlight => _ballActionActive;
     public bool IsLooseBall => _looseBallActive;
+    public bool IsBallVisible => _isBallVisible;
+    public bool IsRestartBallPlaced => _restartBallPlaced;
     public Vector2 LooseBallVelocityMetersPerSecond => _looseBallVelocityMetersPerSecond;
     public Vector2 BallFlightStart => _ballActionFrom;
     public Vector2 BallFlightTarget => _ballActionTo;
@@ -123,7 +135,7 @@ public partial class MatchPitch2D : Control
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(600, 400);
+        SetExpandedDisplay(IsExpandedDisplay);
         MouseFilter = MouseFilterEnum.Ignore;
         SetProcess(true);
     }
@@ -138,6 +150,7 @@ public partial class MatchPitch2D : Control
         _playerRoles.Clear();
         _playerSlotIds.Clear();
         _playerPaces.Clear();
+        _playerNumbers.Clear();
         _playerIntents.Clear();
         _interceptionAttemptedBy.Clear();
         _movementController.Reset();
@@ -152,6 +165,8 @@ public partial class MatchPitch2D : Control
                             unchecked((uint)(simulation.MatchSeed >> 32));
         _decisionVarietyTracker.Reset();
         _decisionsSinceShot = 0;
+        _carryOwnerId = new StringName();
+        _consecutiveCarries = 0;
         _nextDecisionTime = 0.35f;
         _nextIntentPlanTime = 0f;
         _ballActionKind = BallActionKind.None;
@@ -179,7 +194,10 @@ public partial class MatchPitch2D : Control
         _restartType = new StringName();
         _restartTeamId = new StringName();
         _restartPosition = new Vector2(0.5f, 0.5f);
+        _restartScheduledTime = 0f;
         _restartExecuteTime = 0f;
+        _isBallVisible = true;
+        _restartBallPlaced = true;
         CompletedPasses = 0;
         Interceptions = 0;
         Dribbles = 0;
@@ -258,6 +276,7 @@ public partial class MatchPitch2D : Control
         }
         float delta = (float)deltaValue;
         _visualTime += delta;
+        UpdateRestartBallPresentation();
         bool waitingForKickoff = _restartPending && _restartType == "kickoff";
         if (!waitingForKickoff)
         {

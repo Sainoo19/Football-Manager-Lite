@@ -30,6 +30,7 @@ public partial class MatchPitch2D
             return;
         }
 
+        ResetCarrySequence();
         StringName shootingTeamId = _playerTeams[shooterId];
         StringName defendingTeamId = shootingTeamId == Simulation.home.team.id
             ? Simulation.away.team.id
@@ -38,8 +39,14 @@ public partial class MatchPitch2D
         Vector2 shooterPosition = CurrentPositions[shooterId];
         float attackDirection = AttackDirection(shootingTeamId);
         float goalX = AttackingGoalX(shootingTeamId);
-        float targetY = 0.455f + DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 101) * 0.09f;
-        Vector2 goalTarget = new(goalX, targetY);
+        Vector2 goalkeeperPosition = CurrentPositions.TryGetValue(goalkeeperId, out Vector2 currentGoalkeeperPosition)
+            ? currentGoalkeeperPosition
+            : new Vector2(goalX, 0.5f);
+        Vector2 goalTarget = _shotTargetPlanner.ChooseGoalTarget(
+            goalX,
+            goalkeeperPosition,
+            DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 101));
+        float targetY = goalTarget.Y;
         FootballPlayer? shooter = GetPlayer(shooterId);
         FootballPlayer? goalkeeper = GetPlayer(goalkeeperId);
 
@@ -79,6 +86,11 @@ public partial class MatchPitch2D
         {
             float distanceMeters = FootballPitchDimensions.DistanceMeters(shooterPosition, goalTarget);
             float angleFactor = Mathf.Clamp(Mathf.Abs(shooterPosition.Y - 0.5f) * 2f, 0f, 1f);
+            float goalkeeperCoverage = _shotTargetPlanner.GoalkeeperCoverage(
+                shooterPosition,
+                goalTarget,
+                goalkeeperPosition);
+            float accuracyRoll = DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 151);
             ShotOutcome resolution = _shotOutcomeResolver.Resolve(
                 shooter?.finishing ?? 50,
                 shooter?.positioning ?? 50,
@@ -88,7 +100,8 @@ public partial class MatchPitch2D
                 distanceMeters,
                 angleFactor,
                 pressureDistanceMeters,
-                DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 151),
+                goalkeeperCoverage,
+                accuracyRoll,
                 DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 181),
                 DecisionRoll(goalkeeperId, shooterId, _decisionSerial + 197),
                 DecisionRoll(goalkeeperId, shooterId, _decisionSerial + 211));
@@ -108,7 +121,12 @@ public partial class MatchPitch2D
                 ShotOutcome.Parried => new Vector2(
                     attackDirection < 0f ? 0.13f : 0.87f,
                     Mathf.Clamp(targetY + (targetY < 0.5f ? 0.12f : -0.12f), 0.18f, 0.82f)),
-                _ => new Vector2(goalX, targetY < 0.5f ? 0.38f : 0.62f)
+                _ => _shotTargetPlanner.ChooseOffTargetDestination(
+                    goalX,
+                    targetY,
+                    shooter?.finishing ?? 50,
+                    distanceMeters,
+                    accuracyRoll)
             };
             nextOwner = resolution == ShotOutcome.Saved ? goalkeeperId : new StringName();
         }

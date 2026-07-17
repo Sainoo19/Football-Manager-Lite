@@ -58,7 +58,7 @@ public static class AttackingRoleTargeter
             1 => Mathf.Lerp(world.BallPosition.Y, 0.5f, 0.45f),
             _ => Mathf.Lerp(baseLane, 0.5f, 0.18f)
         };
-        targetY = ClampRoleLane(world.PlayerRoles[playerId], targetY, false);
+        targetY = ClampRoleLane(world.PlayerRoles[playerId], targetY, false, direction);
         return SpaceEvaluator.ClampToPitch(new Vector2(targetX, targetY));
     }
 
@@ -80,8 +80,8 @@ public static class AttackingRoleTargeter
         float targetX = isFinalThird
             ? direction > 0f ? FinalThirdX(role) : 1f - FinalThirdX(role)
             : world.BallPosition.X + direction * aheadOfBall;
-        float preferredLane = PreferredRunnerLane(role, baseLane, isFinalThird);
-        return FindOpenLaneNear(world, teamId, targetX, preferredLane, role, isFinalThird);
+        float preferredLane = PreferredRunnerLane(role, baseLane, isFinalThird, direction);
+        return FindOpenLaneNear(world, teamId, targetX, preferredLane, role, isFinalThird, direction);
     }
 
     private static Vector2 FindOpenLaneNear(
@@ -90,14 +90,15 @@ public static class AttackingRoleTargeter
         float targetX,
         float preferredLane,
         string role,
-        bool isFinalThird)
+        bool isFinalThird,
+        float attackDirection)
     {
         Vector2 bestTarget = new(targetX, preferredLane);
         float bestScore = float.NegativeInfinity;
         float[] laneAdjustments = { 0f, -0.035f, 0.035f };
         foreach (float adjustment in laneAdjustments)
         {
-            float candidateY = ClampRoleLane(role, preferredLane + adjustment, isFinalThird);
+            float candidateY = ClampRoleLane(role, preferredLane + adjustment, isFinalThird, attackDirection);
             Vector2 candidate = SpaceEvaluator.ClampToPitch(new Vector2(targetX, candidateY));
             float pressure = SpaceEvaluator.OpponentPressure(
                 candidate,
@@ -122,29 +123,39 @@ public static class AttackingRoleTargeter
         return bestTarget;
     }
 
-    private static float PreferredRunnerLane(string role, float baseLane, bool isFinalThird)
+    private static float PreferredRunnerLane(
+        string role,
+        float baseLane,
+        bool isFinalThird,
+        float attackDirection)
     {
         if (!isFinalThird)
         {
-            return ClampRoleLane(role, baseLane, false);
+            return ClampRoleLane(role, baseLane, false, attackDirection);
         }
 
         return role switch
         {
             "ST" => Mathf.Clamp(baseLane, 0.34f, 0.66f),
-            "LW" => 0.40f,
-            "RW" => 0.60f,
+            "LW" => attackDirection > 0f ? 0.40f : 0.60f,
+            "RW" => attackDirection > 0f ? 0.60f : 0.40f,
             "AM" => Mathf.Lerp(baseLane, 0.5f, 0.65f),
             "CM" => Mathf.Clamp(baseLane, 0.28f, 0.72f),
             _ => Mathf.Clamp(baseLane, 0.20f, 0.80f)
         };
     }
 
-    private static float ClampRoleLane(string role, float lane, bool isFinalThird) => role switch
+    private static float ClampRoleLane(
+        string role,
+        float lane,
+        bool isFinalThird,
+        float attackDirection) => role switch
     {
         "ST" => Mathf.Clamp(lane, 0.30f, 0.70f),
-        "LW" when !isFinalThird => Mathf.Clamp(lane, 0.08f, 0.44f),
-        "RW" when !isFinalThird => Mathf.Clamp(lane, 0.56f, 0.92f),
+        "LW" when !isFinalThird && attackDirection > 0f => Mathf.Clamp(lane, 0.08f, 0.44f),
+        "LW" when !isFinalThird => Mathf.Clamp(lane, 0.56f, 0.92f),
+        "RW" when !isFinalThird && attackDirection > 0f => Mathf.Clamp(lane, 0.56f, 0.92f),
+        "RW" when !isFinalThird => Mathf.Clamp(lane, 0.08f, 0.44f),
         "LW" or "RW" => Mathf.Clamp(lane, 0.32f, 0.68f),
         "CM" or "AM" or "DM" => Mathf.Clamp(lane, 0.16f, 0.84f),
         _ => Mathf.Clamp(lane, 0.06f, 0.94f)

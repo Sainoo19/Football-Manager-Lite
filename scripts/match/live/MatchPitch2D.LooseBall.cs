@@ -8,6 +8,7 @@ public partial class MatchPitch2D
         Vector2 initialVelocityMetersPerSecond = default)
     {
         ClearDirectAttack();
+        _isBallVisible = true;
         _ballOwnerId = new StringName();
         _looseBallActive = true;
         _restartPending = false;

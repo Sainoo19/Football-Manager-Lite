@@ -2,6 +2,27 @@ using Godot;
 
 public sealed class PassOptionEvaluator
 {
+    public bool CanReceiverControl(
+        float nearestOpponentDistanceMeters,
+        float passingLaneRisk,
+        float forwardGainMeters,
+        float distanceMeters)
+    {
+        if (nearestOpponentDistanceMeters < 1.6f || passingLaneRisk > 0.82f)
+        {
+            return false;
+        }
+
+        bool sidewaysOrBackward = forwardGainMeters < 2f;
+        if (sidewaysOrBackward &&
+            (nearestOpponentDistanceMeters < 3.6f || passingLaneRisk > 0.48f))
+        {
+            return false;
+        }
+
+        return distanceMeters <= 30f || nearestOpponentDistanceMeters >= 3f;
+    }
+
     public bool CanConsiderCross(
         string candidateRole,
         float forwardGainMeters,

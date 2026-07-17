@@ -113,6 +113,9 @@ public partial class MatchPitch2D
         _looseBallVelocityMetersPerSecond = Vector2.Zero;
         _restartPending = false;
         _restartType = new StringName();
+        ResetCarrySequence();
+        _isBallVisible = true;
+        _restartBallPlaced = true;
         _activeTeamId = attackingTeamId;
         _nextIntentPlanTime = 0f;
     }

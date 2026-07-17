@@ -55,6 +55,28 @@ public static class SpaceEvaluator
         return highestRisk;
     }
 
+    public static float NearestOpponentDistanceMeters(
+        Vector2 point,
+        StringName teamId,
+        IReadOnlyDictionary<StringName, Vector2> positions,
+        IReadOnlyDictionary<StringName, StringName> playerTeams)
+    {
+        float nearestDistanceMeters = float.PositiveInfinity;
+        foreach ((StringName playerId, Vector2 position) in positions)
+        {
+            if (playerTeams[playerId] == teamId)
+            {
+                continue;
+            }
+
+            nearestDistanceMeters = Mathf.Min(
+                nearestDistanceMeters,
+                FootballPitchDimensions.DistanceMeters(point, position));
+        }
+
+        return nearestDistanceMeters;
+    }
+
     public static Vector2 ClampToPitch(Vector2 position) => new(
         Mathf.Clamp(position.X, MinimumX, MaximumX),
         Mathf.Clamp(position.Y, MinimumY, MaximumY));

@@ -1,8 +1,29 @@
 using Godot;
 
+public enum GoalKickBallPresentation
+{
+    OutOfPlayVisible,
+    BeingRetrieved,
+    PlacedForRestart
+}
+
 public sealed class GoalKickRestartPlanner
 {
     public const float PreparationDurationSeconds = 3.2f;
+    public const float RetrievalStartsAfterSeconds = 0.65f;
+    public const float BallPlacedAfterSeconds = 2.1f;
+
+    public GoalKickBallPresentation BallPresentation(float elapsedSeconds)
+    {
+        if (elapsedSeconds < RetrievalStartsAfterSeconds)
+        {
+            return GoalKickBallPresentation.OutOfPlayVisible;
+        }
+
+        return elapsedSeconds < BallPlacedAfterSeconds
+            ? GoalKickBallPresentation.BeingRetrieved
+            : GoalKickBallPresentation.PlacedForRestart;
+    }
 
     public Vector2 PositionTarget(
         Vector2 basePosition,

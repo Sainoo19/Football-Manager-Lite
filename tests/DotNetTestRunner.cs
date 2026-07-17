@@ -430,6 +430,8 @@ public partial class DotNetTestRunner : Node
         int offTarget = 0;
         int goalkeeperStops = 0;
         int longRangeGoals = 0;
+        int openGoalGoals = 0;
+        int openGoalOffTarget = 0;
         for (int sample = 0; sample < 240; sample++)
         {
             float accuracyRoll = ((sample * 37) % 239) / 238f;
@@ -445,6 +447,7 @@ public partial class DotNetTestRunner : Node
                 17f,
                 0.18f,
                 5.5f,
+                1f,
                 accuracyRoll,
                 goalRoll,
                 handlingRoll,
@@ -471,6 +474,7 @@ public partial class DotNetTestRunner : Node
                 30f,
                 0.15f,
                 6f,
+                1f,
                 accuracyRoll,
                 goalRoll,
                 handlingRoll,
@@ -479,10 +483,62 @@ public partial class DotNetTestRunner : Node
             {
                 longRangeGoals++;
             }
+
+            ShotOutcome openGoalOutcome = outcomeResolver.Resolve(
+                70,
+                68,
+                65,
+                72,
+                65,
+                12f,
+                0.10f,
+                6f,
+                0.15f,
+                accuracyRoll,
+                goalRoll,
+                handlingRoll,
+                cornerRoll);
+            if (openGoalOutcome == ShotOutcome.Goal)
+            {
+                openGoalGoals++;
+            }
+            else if (openGoalOutcome == ShotOutcome.OffTarget)
+            {
+                openGoalOffTarget++;
+            }
         }
         Check(offTarget >= 55, "Một phần đáng kể cú sút phải đi ra ngoài khung thành.");
         Check(goalkeeperStops > goals, "Thủ môn phải cản phá nhiều cú sút hơn số bàn thua trong mẫu cân bằng.");
         Check(longRangeGoals <= 12, "Cú sút khoảng 30 mét không được có tỷ lệ thành bàn phi thực tế.");
+        Check(
+            openGoalGoals > goals && openGoalOffTarget < offTarget,
+            "Khi thủ môn đã lệch khỏi đường bóng, cú sút gần phải dễ trúng đích và thành bàn hơn rõ ràng.");
+
+        ShotTargetPlanner targetPlanner = new();
+        Vector2 shooterPosition = new(0.25f, 0.68f);
+        Vector2 displacedGoalkeeper = new(0.08f, 0.66f);
+        Vector2 openGoalTarget = targetPlanner.ChooseGoalTarget(0.015f, displacedGoalkeeper, 0.8f);
+        Check(
+            openGoalTarget.Y < 0.5f,
+            "Tiền đạo phải nhắm phần khung thành đối diện khi thủ môn đã lao lệch sang một phía.");
+        float displacedCoverage = targetPlanner.GoalkeeperCoverage(
+            shooterPosition,
+            openGoalTarget,
+            displacedGoalkeeper);
+        Check(
+            displacedCoverage < 0.55f,
+            "Thủ môn lệch khỏi đường sút không được giữ nguyên toàn bộ sức cản như khi đứng đúng vị trí.");
+        Vector2 nearMiss = targetPlanner.ChooseOffTargetDestination(
+            0.015f,
+            openGoalTarget.Y,
+            76,
+            12f,
+            0.5f);
+        float missBeyondPostMeters = Mathf.Abs(nearMiss.Y - 0.5f) * FootballPitchDimensions.WidthMeters -
+                                     FootballPitchDimensions.GoalWidthMeters * 0.5f;
+        Check(
+            missBeyondPostMeters is >= 0.4f and <= 2.8f && nearMiss.X < 0f,
+            "Cú sút gần chệch hướng phải đi sát cột ở mức hợp lý, không bay thẳng về phía cột cờ.");
 
         StringName homeTeamId = "keeper_home";
         StringName awayTeamId = "keeper_away";
@@ -633,6 +689,11 @@ public partial class DotNetTestRunner : Node
         Check(
             GoalKickRestartPlanner.PreparationDurationSeconds >= 2.5f,
             "Phát bóng phải có thời gian bóng chết để hai đội dàn lại vị trí.");
+        Check(
+            restartPlanner.BallPresentation(0.2f) == GoalKickBallPresentation.OutOfPlayVisible &&
+            restartPlanner.BallPresentation(1.0f) == GoalKickBallPresentation.BeingRetrieved &&
+            restartPlanner.BallPresentation(2.4f) == GoalKickBallPresentation.PlacedForRestart,
+            "Bóng ra ngoài phải chờ được nhặt hoặc đưa bóng mới vào trước khi xuất hiện ở vị trí phát bóng.");
         Vector2 goalkeeperTarget = restartPlanner.PositionTarget(
             new Vector2(0.04f, 0.50f),
             "GK",
@@ -751,6 +812,58 @@ public partial class DotNetTestRunner : Node
         Check(
             !passEvaluator.CanConsiderCross("RW", -28f, 41f, 0.20f),
             "LW không được tạt chéo lùi xuyên gần hết đội hình sang RW cánh đối diện.");
+        Check(
+            !passEvaluator.CanReceiverControl(1.3f, 0.30f, 4f, 16f),
+            "Không được chuyền cho đồng đội đang bị đối thủ áp sát ngay sát người.");
+        Check(
+            !passEvaluator.CanReceiverControl(3f, 0.55f, 0f, 18f),
+            "Đường chuyền ngang chỉ được chọn khi người nhận có tư thế đủ thoải mái.");
+        Check(
+            passEvaluator.CanReceiverControl(5f, 0.30f, 8f, 22f),
+            "Đồng đội có khoảng trống phía trước vẫn phải là phương án chuyền hợp lệ.");
+
+        BallCarrierDecisionEvaluator carrierDecision = new();
+        PassSelection uncomfortableSidePass = new("marked_teammate", -0.2f, 0f, 18f, 0.46f, 3.7f);
+        Check(
+            carrierDecision.ShouldKeepCarrying(false, 72, 0, 8f, uncomfortableSidePass, 0.9f),
+            "Cầu thủ đang có khoảng trống phải tiếp tục dẫn bóng thay vì bị ép chuyền ngang vô nghĩa.");
+        PassSelection progressivePass = new("free_runner", 0.4f, 9f, 21f, 0.25f, 6f);
+        Check(
+            !carrierDecision.ShouldKeepCarrying(false, 65, 0, 7f, progressivePass, 0.9f),
+            "Khi đồng đội chạy phía trước và thoải mái, người cầm bóng phải biết nhả bóng đúng lúc.");
+        Check(
+            carrierDecision.ShouldKeepCarrying(false, 65, 20, 7f, default, 0.9f),
+            "Không có người nhận hợp lệ thì engine không được chuyền chỉ vì đã giữ bóng lâu.");
+
+        StringName clearingTeamId = "clearance_team";
+        StringName defendingTeamId = "clearance_opponent";
+        StringName outletId = "clearance_outlet";
+        var clearancePositions = new System.Collections.Generic.Dictionary<StringName, Vector2>
+        {
+            [outletId] = new Vector2(0.48f, 0.50f),
+            ["clearance_opponent"] = new Vector2(0.52f, 0.62f)
+        };
+        var clearanceTeams = new System.Collections.Generic.Dictionary<StringName, StringName>
+        {
+            [outletId] = clearingTeamId,
+            ["clearance_opponent"] = defendingTeamId
+        };
+        var clearanceRoles = new System.Collections.Generic.Dictionary<StringName, string>
+        {
+            [outletId] = "ST",
+            ["clearance_opponent"] = "CB"
+        };
+        Vector2 clearanceTarget = new ClearanceTargetPlanner().FindTarget(
+            new Vector2(0.15f, 0.14f),
+            1f,
+            clearingTeamId,
+            clearancePositions,
+            clearanceTeams,
+            clearanceRoles);
+        Check(
+            FootballPitchDimensions.DistanceMeters(clearanceTarget, clearancePositions[outletId]) <= 4f &&
+            clearanceTarget.Y is > 0.10f and < 0.90f,
+            "Pha phá bóng dài phải hướng tới khu vực đồng đội có thể tranh chấp, không bay vào góc sân trống.");
 
         GD.Print("PASS: tiền đạo trong vùng cấm ưu tiên dứt điểm và tránh chuyền lùi hoặc chuyền vào tuyến bị khóa.");
     }
@@ -840,6 +953,7 @@ public partial class DotNetTestRunner : Node
 
         int observedThreeVersusTwoFlights = 0;
         int extremeBackwardFlights = 0;
+        int emptyLongPasses = 0;
         System.Collections.Generic.Dictionary<string, int> extremeBackwardFlightTypes = new();
         for (int seed = 1; seed <= 10; seed++)
         {
@@ -871,6 +985,19 @@ public partial class DotNetTestRunner : Node
                 float flightDistanceMeters = FootballPitchDimensions.DistanceMeters(
                     previousFlightStart,
                     previousFlightTarget);
+                bool isPass = samplePitch.BallActionType is "Pass" or "ThroughBall" or "Cross";
+                if (isPass && flightDistanceMeters > 18f)
+                {
+                    float nearestTeammateDistanceMeters = sample.home.squad.starter_ids
+                        .Where(samplePitch.CurrentPositions.ContainsKey)
+                        .Min(playerId => FootballPitchDimensions.DistanceMeters(
+                            samplePitch.CurrentPositions[playerId],
+                            previousFlightTarget));
+                    if (nearestTeammateDistanceMeters > 12f)
+                    {
+                        emptyLongPasses++;
+                    }
+                }
                 if (forwardGainMeters < -15f && flightDistanceMeters > 30f)
                 {
                     extremeBackwardFlights++;
@@ -885,6 +1012,9 @@ public partial class DotNetTestRunner : Node
             $"Trong 3v2 không được có đường chuyền lùi quá 15 m và dài hơn 30 m; " +
             $"đã thấy {extremeBackwardFlights}/{observedThreeVersusTwoFlights} quỹ đạo vi phạm " +
             $"({string.Join(", ", extremeBackwardFlightTypes.Select(pair => $"{pair.Key}: {pair.Value}"))}).");
+        Check(
+            emptyLongPasses == 0,
+            $"Đường chuyền dài phải có đồng đội đủ gần điểm đến; đã thấy {emptyLongPasses} đường bóng vào vùng trống.");
 
         FootballMatchSimulation simulation = new FootballMatchSimulation().setup(teams[0], teams[1], 5150);
         simulation.use_live_pitch_events = true;
@@ -1043,6 +1173,79 @@ public partial class DotNetTestRunner : Node
         Check(
             Math.Abs(aspectRatio - FootballPitchDimensions.AspectRatio) < 0.001f,
             "Sân 2D phải giữ đúng tỷ lệ 105:68 khi panel quá rộng.");
+        MatchPitch2D displayPitch = new();
+        displayPitch.SetExpandedDisplay(false);
+        Vector2 compactSize = displayPitch.CustomMinimumSize;
+        displayPitch.SetExpandedDisplay(true);
+        Check(
+            compactSize.Y > 0f && displayPitch.CustomMinimumSize == Vector2.Zero,
+            "Sân lớn phải dùng vùng trống của panel thay vì ép chiều cao làm cắt mất đáy sân.");
+        displayPitch.SetMarkerLabelMode(PlayerMarkerLabelMode.SquadNumber);
+        Check(
+            displayPitch.MarkerLabelMode == PlayerMarkerLabelMode.SquadNumber,
+            "Sân phải đổi được giữa nhãn vị trí và số áo để quan sát/debug.");
+        displayPitch.Free();
+
+        StringName homeTeamId = "orientation_home";
+        StringName awayTeamId = "orientation_away";
+        MatchSideController sideController = new();
+        Vector2 homeLeftBack = sideController.FormationPosition(0.14f, 0.70f, homeTeamId, homeTeamId);
+        Vector2 homeRightBack = sideController.FormationPosition(0.86f, 0.70f, homeTeamId, homeTeamId);
+        Vector2 awayLeftBack = sideController.FormationPosition(0.14f, 0.70f, awayTeamId, homeTeamId);
+        Check(
+            homeLeftBack.Y > 0.5f && homeRightBack.Y < 0.5f,
+            "Đội tấn công sang trái phải đặt LB/LW phía dưới và RB/RW phía trên theo hướng nhìn của cầu thủ.");
+        Check(
+            awayLeftBack.Y < 0.5f,
+            "Đội tấn công sang phải phải đặt LB/LW phía trên, đối xứng đúng với đội còn lại.");
+        sideController.SwitchEnds();
+        Vector2 switchedHomeLeftBack = sideController.FormationPosition(0.14f, 0.70f, homeTeamId, homeTeamId);
+        Check(
+            switchedHomeLeftBack.Y < 0.5f,
+            "Sau khi đổi sân, cánh trái/phải phải đổi phía cùng hướng tấn công của đội.");
+
+        StringName homeLeftWingId = "orientation_home_lw";
+        StringName awayLeftWingId = "orientation_away_lw";
+        var orientationPositions = new System.Collections.Generic.Dictionary<StringName, Vector2>
+        {
+            [homeLeftWingId] = new Vector2(0.62f, 0.82f),
+            [awayLeftWingId] = new Vector2(0.38f, 0.18f)
+        };
+        var orientationTeams = new System.Collections.Generic.Dictionary<StringName, StringName>
+        {
+            [homeLeftWingId] = homeTeamId,
+            [awayLeftWingId] = awayTeamId
+        };
+        var orientationRoles = new System.Collections.Generic.Dictionary<StringName, string>
+        {
+            [homeLeftWingId] = "LW",
+            [awayLeftWingId] = "LW"
+        };
+        FootballWorldSnapshot orientationWorld = new(
+            orientationPositions,
+            orientationPositions,
+            orientationTeams,
+            orientationRoles,
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new StringName(),
+            new StringName(),
+            homeTeamId,
+            homeTeamId,
+            false,
+            false,
+            true);
+        Vector2 homeLeftWingRun = AttackingRoleTargeter.RunnerTarget(
+            orientationWorld,
+            homeLeftWingId,
+            homeTeamId);
+        Vector2 awayLeftWingRun = AttackingRoleTargeter.RunnerTarget(
+            orientationWorld,
+            awayLeftWingId,
+            awayTeamId);
+        Check(
+            homeLeftWingRun.Y > 0.5f && awayLeftWingRun.Y < 0.5f,
+            "AI chạy chỗ phải giữ đúng cánh trái theo hướng tấn công, không kéo LW hai đội về cùng một phía màn hình.");
 
         StringName playerId = "movement_test";
         var positions = new System.Collections.Generic.Dictionary<StringName, Vector2>
@@ -1113,7 +1316,35 @@ public partial class DotNetTestRunner : Node
         Check(squad.validate_against(players).Length == 0, "Danh sách tự chọn phải hợp lệ.");
         Check(players.All(player => player.passing is >= 1 and <= 99 && player.tackling is >= 1 and <= 99), "Thuộc tính chuyên môn phải nằm trong thang 1-99.");
         foreach (FormationDefinition item in catalog.all()) Check(item.slots.Count == 11, "Mỗi sơ đồ phải có 11 vị trí.");
+
+        Array<FootballTeam> sampleTeams = new SampleDataFactory().create_teams();
+        FootballTeam sainoo = sampleTeams.Single(team => team.id == "sainoo_fc");
+        Check(
+            sainoo.players.Count == 11 &&
+            sainoo.match_squad.starter_ids.Count == 11 &&
+            sainoo.match_squad.substitute_ids.Count == 0,
+            "Sainoo FC phải có đúng 11 huyền thoại đá chính và chưa có cầu thủ dự bị.");
+        Check(
+            sainoo.match_squad.formation_id == "4_1_2_3" &&
+            sainoo.match_squad.starter_slots.Count == 11 &&
+            sainoo.match_squad.validate_against(sainoo.players).Length == 0,
+            "Sainoo FC phải được xếp đủ đội hình 4-1-2-3 hợp lệ.");
+        Check(
+            StarterName("gk") == "Iker Casillas" &&
+            StarterName("dm") == "Frank Rijkaard" &&
+            StarterName("am") == "Johan Cruyff" &&
+            StarterName("st") == "Cristiano Ronaldo",
+            "Các cầu thủ Sainoo FC phải đứng đúng vai trò GK, DM, AM và ST đã yêu cầu.");
+        Check(
+            sainoo.players.Select(player => player.SquadNumber).Distinct().Count() == 11,
+            "Mười một cầu thủ Sainoo FC phải có số áo không trùng nhau.");
         GD.Print("PASS: quân số không giới hạn, danh sách trận 11 + 12.");
+
+        string StarterName(string slotId)
+        {
+            StringName playerId = sainoo.match_squad.starter_slots[new StringName(slotId)].AsStringName();
+            return sainoo.get_player(playerId)?.display_name ?? string.Empty;
+        }
     }
 
     private static void TestMatchSimulation()
@@ -1200,7 +1431,7 @@ public partial class DotNetTestRunner : Node
         pitch.AnimateMinute(events);
         pitch._Process(0.35);
         bool observedStraightFlight = false;
-        for (int frame = 0; frame < 80 && !observedStraightFlight; frame++)
+        for (int frame = 0; frame < 140 && !observedStraightFlight; frame++)
         {
             if (pitch.IsBallInFlight && pitch.BallFlightStart.DistanceTo(pitch.BallFlightTarget) > 0.01f)
             {
@@ -1260,7 +1491,7 @@ public partial class DotNetTestRunner : Node
         var scene = GD.Load<PackedScene>("res://scenes/main.tscn");
         var main = scene.Instantiate<Main>();
         AddChild(main);
-        Check(main.teams.Count == 4, "UI phải nhận đủ bốn đội từ C#.");
+        Check(main.teams.Count == 5, "UI phải nhận đủ năm đội, bao gồm Sainoo FC, từ C#.");
         main.ChooseSelectedTeam();
         Check(main.managed_team is not null, "UI phải chọn được CLB.");
         main.ShowMatchView();

@@ -26,11 +26,24 @@ public partial class MatchPitch2D
             float forwardGainMeters = direction * (candidatePosition.X - crosserPosition.X) *
                                       FootballPitchDimensions.LengthMeters;
             float laneRisk = PassingLaneRisk(crosserPosition, candidatePosition, _activeTeamId);
+            float receiverSpaceMeters = SpaceEvaluator.NearestOpponentDistanceMeters(
+                candidatePosition,
+                _activeTeamId,
+                CurrentPositions,
+                _playerTeams);
             if (!_passOptionEvaluator.CanConsiderCross(
                     _playerRoles[candidateId],
                     forwardGainMeters,
                     distanceMeters,
                     laneRisk))
+            {
+                continue;
+            }
+            if (!_passOptionEvaluator.CanReceiverControl(
+                    receiverSpaceMeters,
+                    laneRisk,
+                    forwardGainMeters,
+                    distanceMeters))
             {
                 continue;
             }

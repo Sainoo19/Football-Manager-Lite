@@ -9,7 +9,8 @@ public partial class FormationCatalog : RefCounted
         Create433(),
         Create4231(),
         Create442(),
-        Create352()
+        Create352(),
+        Create4123()
     };
 
     public FormationDefinition find(StringName formationId)
@@ -86,5 +87,20 @@ public partial class FormationCatalog : RefCounted
             Slot("lst", "ST", 0.38f, 0.18f), Slot("rst", "ST", 0.62f, 0.18f)
         };
         return new FormationDefinition().setup("3_5_2", "3-5-2", slots);
+    }
+
+    private static FormationDefinition Create4123()
+    {
+        Array<Dictionary> slots = new()
+        {
+            Slot("gk", "GK", 0.50f, 0.90f),
+            Slot("lb", "LB", 0.14f, 0.70f), Slot("lcb", "CB", 0.38f, 0.74f),
+            Slot("rcb", "CB", 0.62f, 0.74f), Slot("rb", "RB", 0.86f, 0.70f),
+            Slot("dm", "DM", 0.50f, 0.58f),
+            Slot("cm", "CM", 0.34f, 0.46f), Slot("am", "AM", 0.66f, 0.36f),
+            Slot("lw", "LW", 0.16f, 0.22f), Slot("st", "ST", 0.50f, 0.16f),
+            Slot("rw", "RW", 0.84f, 0.22f)
+        };
+        return new FormationDefinition().setup("4_1_2_3", "4-1-2-3", slots);
     }
 }

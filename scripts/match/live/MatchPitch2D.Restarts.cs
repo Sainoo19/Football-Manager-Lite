@@ -54,6 +54,8 @@ public partial class MatchPitch2D
     {
         if (Simulation is null || playerId == new StringName() || !CurrentPositions.ContainsKey(playerId))
             return;
+        ResetCarrySequence();
+        _isBallVisible = true;
         _ballOwnerId = playerId;
         _looseBallVelocityMetersPerSecond = Vector2.Zero;
         _activeTeamId = _playerTeams[playerId];
@@ -68,6 +70,7 @@ public partial class MatchPitch2D
     {
         if (Simulation is null)
             return;
+        ResetCarrySequence();
         ClearDirectAttack();
         if (restartType == "kickoff")
             ResetPlayersForKickoff(teamId);
@@ -80,7 +83,14 @@ public partial class MatchPitch2D
         _activeTeamId = teamId;
         Simulation.set_live_possession(teamId);
         _restartPosition = ClampToPitch(position);
-        BallPosition = _restartPosition;
+        _restartScheduledTime = _visualTime;
+        bool waitsForBallRetrieval = restartType == "goal_kick";
+        _restartBallPlaced = !waitsForBallRetrieval;
+        _isBallVisible = true;
+        if (!waitsForBallRetrieval)
+        {
+            BallPosition = _restartPosition;
+        }
         _restartExecuteTime = _visualTime + (restartType == "goal_kick"
             ? GoalKickRestartPlanner.PreparationDurationSeconds
             : 0.46f);
@@ -89,11 +99,40 @@ public partial class MatchPitch2D
             EmitSignal(SignalName.LiveMatchEvent, restartEvent);
     }
 
+    private void UpdateRestartBallPresentation()
+    {
+        if (!_restartPending || _restartType != "goal_kick" || _restartBallPlaced)
+        {
+            return;
+        }
+
+        GoalKickBallPresentation presentation = _goalKickRestartPlanner.BallPresentation(
+            _visualTime - _restartScheduledTime);
+        if (presentation == GoalKickBallPresentation.OutOfPlayVisible)
+        {
+            _isBallVisible = true;
+            return;
+        }
+        if (presentation == GoalKickBallPresentation.BeingRetrieved)
+        {
+            _isBallVisible = false;
+            return;
+        }
+
+        _restartBallPlaced = true;
+        _isBallVisible = true;
+        BallPosition = _restartPosition;
+        StringName goalkeeperId = ChooseGoalkeeper(_restartTeamId);
+        SetAction($"{PlayerName(goalkeeperId)} nhận bóng mới và đặt xuống chuẩn bị phát bóng");
+    }
+
     private void ExecuteRestart()
     {
         if (Simulation is null)
             return;
         _restartPending = false;
+        _restartBallPlaced = true;
+        _isBallVisible = true;
         Restarts++;
         _activeTeamId = _restartTeamId;
         Simulation.set_live_possession(_activeTeamId);
@@ -235,6 +274,9 @@ public partial class MatchPitch2D
         _actionSourceTeamId = new StringName();
         _looseBallActive = false;
         _looseBallVelocityMetersPerSecond = Vector2.Zero;
+        ResetCarrySequence();
+        _isBallVisible = true;
+        _restartBallPlaced = true;
         BallPosition = new Vector2(0.5f, 0.5f);
 
         foreach (StringName playerId in CurrentPositions.Keys.ToList())

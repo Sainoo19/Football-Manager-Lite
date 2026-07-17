@@ -62,6 +62,19 @@ public partial class MatchPitch2D
         DrawRect(new Rect2(new Vector2(field.Position.X - 8, center.Y - goalHeight / 2), new Vector2(8, goalHeight)), line, false, 2);
         DrawRect(new Rect2(new Vector2(field.End.X, center.Y - goalHeight / 2), new Vector2(8, goalHeight)), line, false, 2);
 
+        DrawPlayers(field);
+        DrawBall(field);
+    }
+
+    private void DrawPlayers(Rect2 field)
+    {
+        if (Simulation is null)
+        {
+            return;
+        }
+
+        float playerRadius = Mathf.Clamp(field.Size.Y * 0.021f, 9f, 14f);
+        int fontSize = Mathf.RoundToInt(Mathf.Clamp(playerRadius * 0.92f, 9f, 13f));
         foreach ((StringName playerId, Vector2 normalized) in CurrentPositions)
         {
             Vector2 point = ToFieldPoint(normalized, field);
@@ -69,9 +82,29 @@ public partial class MatchPitch2D
             Color color = isHome ? HomeColor : AwayColor;
             if (_playerRoles[playerId] == "GK")
                 color = isHome ? new Color("f1c75b") : new Color("ec9f45");
-            DrawCircle(point + new Vector2(1.5f, 2), 8.5f, new Color(0, 0, 0, 0.32f));
-            DrawCircle(point, 8, color);
-            DrawArc(point, 8, 0, Mathf.Tau, 24, new Color(1, 1, 1, 0.84f), 1.5f);
+            DrawCircle(point + new Vector2(1.5f, 2), playerRadius + 0.5f, new Color(0, 0, 0, 0.32f));
+            DrawCircle(point, playerRadius, color);
+            DrawArc(point, playerRadius, 0, Mathf.Tau, 24, new Color(1, 1, 1, 0.84f), 1.5f);
+            _playerNumbers.TryGetValue(playerId, out int squadNumber);
+            string markerText = MarkerLabelMode == PlayerMarkerLabelMode.Position
+                ? _playerRoles[playerId]
+                : squadNumber > 0 ? squadNumber.ToString() : "?";
+            DrawString(
+                ThemeDB.FallbackFont,
+                new Vector2(point.X - playerRadius, point.Y + fontSize * 0.34f),
+                markerText,
+                HorizontalAlignment.Center,
+                playerRadius * 2f,
+                fontSize,
+                Colors.White);
+        }
+    }
+
+    private void DrawBall(Rect2 field)
+    {
+        if (!_isBallVisible)
+        {
+            return;
         }
 
         Vector2 ballPoint = ToFieldPoint(BallPosition, field);

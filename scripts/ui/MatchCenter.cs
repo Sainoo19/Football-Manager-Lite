@@ -217,9 +217,15 @@ public partial class MatchCenter : Control
         awayLegend.AddThemeColorOverride("font_color", new Color("ff5d73"));
         pitchHeader.AddChild(awayLegend);
 
-        _pitchView = new MatchPitch2D { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _pitchView = new MatchPitch2D
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            SizeFlagsStretchRatio = 4f
+        };
         _pitchView.ActionChanged += description => _pitchActionLabel.Text = $"• {description}";
         _pitchView.LiveMatchEvent += OnLiveMatchEvent;
+        box.AddChild(BuildPitchDisplayControls());
         box.AddChild(_pitchView);
         _eventScroll = new ScrollContainer
         {
@@ -230,6 +236,7 @@ public partial class MatchCenter : Control
         _eventContainer = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _eventContainer.AddThemeConstantOverride("separation", 6);
         _eventScroll.AddChild(_eventContainer);
+        SetPitchDisplayExpanded(true);
         return panel;
     }
 

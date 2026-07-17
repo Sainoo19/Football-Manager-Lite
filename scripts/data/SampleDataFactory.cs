@@ -56,6 +56,7 @@ public partial class SampleDataFactory : RefCounted
             lineupManager.auto_build(team.match_squad, catalog.find("4_3_3"), team.players);
             teams.Add(team);
         }
+        teams.Add(new SainooTeamFactory().Create(catalog.find("4_1_2_3")));
         return teams;
     }
 
@@ -75,6 +76,7 @@ public partial class SampleDataFactory : RefCounted
                 18 + (playerIndex * 5 + teamIndex) % 18,
                 "Việt Nam",
                 baseRating + ratingOffset);
+            player.SquadNumber = playerIndex + 1;
             player.fitness = 82 + playerIndex * 3 % 19;
             player.form = 42 + playerIndex * 11 % 38;
             team.add_player(player);
