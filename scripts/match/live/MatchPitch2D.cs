@@ -47,6 +47,11 @@ public partial class MatchPitch2D : Control
     private readonly DirectAttackContinuationPlanner _directAttackContinuationPlanner = new();
     private readonly GoalKickRestartPlanner _goalKickRestartPlanner = new();
     private readonly DecisionVarietyTracker _decisionVarietyTracker = new();
+    private readonly FinalThirdDecisionPlanner _finalThirdDecisionPlanner = new();
+    private readonly MatchScenarioFactory _matchScenarioFactory = new();
+    private readonly ThroughBallTargetPlanner _throughBallTargetPlanner = new();
+    private readonly PassOptionEvaluator _passOptionEvaluator = new();
+    private readonly DuelDistanceRules _duelDistanceRules = new();
     private readonly IntentDictionary _playerIntents = new();
     private readonly HashSet<StringName> _interceptionAttemptedBy = new();
 
@@ -103,6 +108,9 @@ public partial class MatchPitch2D : Control
     public Vector2 LooseBallVelocityMetersPerSecond => _looseBallVelocityMetersPerSecond;
     public Vector2 BallFlightStart => _ballActionFrom;
     public Vector2 BallFlightTarget => _ballActionTo;
+    public StringName BallActionSourceTeamId => _actionSourceTeamId;
+    public string BallActionType => _ballActionKind.ToString();
+    public MatchScenarioKind? ActiveScenario { get; private set; }
 
     private bool _ballActionActive;
     private Vector2 _ballActionFrom = new(0.5f, 0.5f);
@@ -179,6 +187,7 @@ public partial class MatchPitch2D : Control
         Restarts = 0;
         LooseBallRecoveries = 0;
         Clearances = 0;
+        ActiveScenario = null;
         IsPlaying = false;
         SetAction("Chuẩn bị giao bóng");
         BallPosition = new Vector2(0.5f, 0.5f);

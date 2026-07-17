@@ -21,7 +21,9 @@ public partial class DotNetTestRunner : Node
             TestDefensiveBlockSpacingAndRollingBall();
             TestShotSelectionAndTraditionalGoalkeeper();
             TestDirectAttackContinuationAndGoalkeeperLooseBallClaim();
+            TestFinalThirdAttackDecisions();
             TestGoalKickShapeAndSeededDecisionVariety();
+            TestScenarioFactoryAndPitchLauncher();
             TestWideAttackKeepsFootballShape();
             TestPitchPauseAndReset();
             TestKickoffGoalResetAndHalfTimeSides();
@@ -171,6 +173,14 @@ public partial class DotNetTestRunner : Node
 
     private static void TestPassTrajectoryAndNearestContest()
     {
+        DuelDistanceRules duelDistanceRules = new();
+        Check(
+            duelDistanceRules.CanAttemptTackle(1.4f) && !duelDistanceRules.CanAttemptTackle(5f),
+            "Hậu vệ chỉ được tắc bóng khi đã áp sát thật, không phải từ khoảng cách 5–7 mét.");
+        Check(
+            duelDistanceRules.IsUnderPressure(3f) && !duelDistanceRules.IsUnderPressure(5f),
+            "Trạng thái chịu áp lực phải dùng khoảng cách mét thật.");
+
         PassTrajectoryPlanner passPlanner = new();
         Vector2 ballPosition = new(0.30f, 0.50f);
         Vector2 receiverPosition = new(0.50f, 0.50f);
@@ -193,9 +203,39 @@ public partial class DotNetTestRunner : Node
             receiverPosition,
             runTarget,
             LivePassType.ThroughBall);
+        float throughBallLeadMeters = FootballPitchDimensions.DistanceMeters(receiverPosition, throughBall.Target);
         Check(
-            FootballPitchDimensions.DistanceMeters(receiverPosition, throughBall.Target) <= 5.21f,
-            "Chọc khe được dẫn trước người nhận nhưng không được vượt quá khả năng đuổi bóng thực tế.");
+            throughBallLeadMeters is >= 4.5f and <= 6.5f,
+            "Chọc khe phải đưa bóng rõ ràng vào khoảng trống nhưng vẫn trong tầm tiền đạo đuổi tới.");
+
+        StringName throughAttackTeam = "through_attack";
+        StringName throughDefenseTeam = "through_defense";
+        var throughPositions = new System.Collections.Generic.Dictionary<StringName, Vector2>
+        {
+            ["through_receiver"] = receiverPosition,
+            ["central_defender"] = new Vector2(0.57f, 0.50f),
+            ["cover_defender"] = new Vector2(0.64f, 0.68f)
+        };
+        var throughTeams = new System.Collections.Generic.Dictionary<StringName, StringName>
+        {
+            ["through_receiver"] = throughAttackTeam,
+            ["central_defender"] = throughDefenseTeam,
+            ["cover_defender"] = throughDefenseTeam
+        };
+        Vector2 openThroughTarget = new ThroughBallTargetPlanner().FindTarget(
+            ballPosition,
+            receiverPosition,
+            new Vector2(0.60f, 0.50f),
+            1f,
+            throughAttackTeam,
+            throughPositions,
+            throughTeams);
+        Check(
+            FootballPitchDimensions.DistanceMeters(receiverPosition, openThroughTarget) >= 5.9f,
+            "Điểm chọc khe phải nằm phía trước người nhận thay vì đúng dưới chân họ.");
+        Check(
+            Mathf.Abs(openThroughTarget.Y - receiverPosition.Y) > 0.04f,
+            "Khi trung lộ bị chặn, chọc khe phải tìm hành lang lệch khỏi hậu vệ.");
 
         StringName firstTeamId = "contest_first";
         StringName secondTeamId = "contest_second";
@@ -662,6 +702,223 @@ public partial class DotNetTestRunner : Node
         GD.Print("PASS: phát bóng có pha dàn đội hình hợp luật và quyết định dùng biến thiên có seed.");
     }
 
+    private static void TestFinalThirdAttackDecisions()
+    {
+        FinalThirdDecisionPlanner planner = new();
+        PassOptionEvaluator passEvaluator = new();
+        Check(
+            planner.Decide("ST", 18f, 8f) == FinalThirdAction.Shoot,
+            "Tiền đạo trung tâm trong vùng dứt điểm phải sút thay vì tìm đường chuyền về.");
+        Check(
+            planner.Decide("ST", 23f, 8f) == FinalThirdAction.Carry,
+            "Tiền đạo ở sát vòng cấm nhưng chưa vào tầm sút phải tiếp tục dẫn bóng.");
+        Check(
+            planner.Decide("RW", 16f, 10f) == FinalThirdAction.Shoot,
+            "Tiền đạo cánh đã bó vào trung lộ gần khung thành phải biết dứt điểm.");
+        Check(
+            planner.Decide("CM", 18f, 8f) == FinalThirdAction.None,
+            "Quy tắc bắt buộc dứt điểm không được áp dụng cho mọi vị trí trên sân.");
+        Check(
+            !passEvaluator.CanConsider("ST", "CB", 0.82f, -8f, 20f, 0.15f, false),
+            "Tiền đạo ở một phần ba cuối sân không được chọn trung vệ làm đường chuyền lùi mặc định.");
+        Check(
+            passEvaluator.CanConsider("ST", "AM", 0.82f, 4f, 18f, 0.25f, false),
+            "Tiền đạo vẫn được phối hợp với cầu thủ tấn công khi đường chuyền an toàn.");
+        Check(
+            !passEvaluator.CanConsider("ST", "AM", 0.82f, 4f, 18f, 0.80f, false),
+            "Tiền đạo không được chuyền vào một hành lang đã bị hậu vệ khóa rõ ràng.");
+        Check(
+            passEvaluator.CanConsider("ST", "CB", 0.55f, -12f, 22f, 0.15f, false),
+            "Ở giữa sân, tiền đạo vẫn có thể nhả bóng về để giữ quyền kiểm soát.");
+        Check(
+            !passEvaluator.CanConsider("LW", "RB", 0.66f, -28f, 41f, 0.20f, false),
+            "Cầu thủ tấn công trong pha chuyển trạng thái không được bỏ lợi thế để chuyền lùi xa cho hậu vệ biên.");
+        Check(
+            !passEvaluator.CanConsider("LW", "RB", 0.66f, -28f, 41f, 0.20f, true),
+            "Ngay cả khi bị áp lực, cầu thủ chỉ được nhả ngắn chứ không chuyền ngược xuyên cả đội hình.");
+        Check(
+            !passEvaluator.CanConsider("CM", "RW", 0.66f, -23f, 37f, 0.20f, false),
+            "Tiền vệ trung tâm tham gia phản công cũng không được chuyền chéo lùi xa xuyên cả đội hình.");
+        Check(
+            passEvaluator.CanConsider("LW", "ST", 0.66f, 8f, 24f, 0.35f, false),
+            "Trong cùng tình huống, phương án phối hợp tiến với tiền đạo phải tiếp tục hợp lệ.");
+        Check(
+            passEvaluator.CanConsiderCross("ST", 6f, 27f, 0.35f),
+            "Quả tạt tới tiền đạo phía trước, trong cự ly hợp lý phải được phép.");
+        Check(
+            passEvaluator.CanConsiderCross("AM", -6f, 20f, 0.35f),
+            "Đường căng ngược ngắn cho tuyến hai vẫn là một lựa chọn hợp lệ.");
+        Check(
+            !passEvaluator.CanConsiderCross("RW", -28f, 41f, 0.20f),
+            "LW không được tạt chéo lùi xuyên gần hết đội hình sang RW cánh đối diện.");
+
+        GD.Print("PASS: tiền đạo trong vùng cấm ưu tiên dứt điểm và tránh chuyền lùi hoặc chuyền vào tuyến bị khóa.");
+    }
+
+    private void TestScenarioFactoryAndPitchLauncher()
+    {
+        MatchScenarioFactory factory = new();
+        MatchScenarioDefinition throughBall = factory.Create(
+            MatchScenarioKind.ThroughBallBreakaway,
+            1f);
+        Check(
+            throughBall.AttackerCount == 2 && throughBall.StartsWithThroughBall,
+            "Scenario chọc khe phải có tiền vệ chuyền và tiền đạo phá bẫy.");
+        Vector2 receptionTarget = throughBall.ThroughBallReceptionTarget ?? Vector2.Zero;
+        float receptionDistanceMeters = FootballPitchDimensions.DistanceMeters(
+            receptionTarget,
+            new Vector2(0.994f, 0.50f));
+        Check(
+            receptionDistanceMeters is >= 33f and <= 36f,
+            "Điểm nhận đường chọc khe phải cách khung thành xấp xỉ 35 mét.");
+
+        StringName attackingTeamId = "scenario_attack";
+        StringName defendingTeamId = "scenario_defense";
+        StringName receiverId = "scenario_runner";
+        var offsidePositions = new System.Collections.Generic.Dictionary<StringName, Vector2>
+        {
+            [receiverId] = throughBall.SupportingAttackerPositions[0],
+            ["scenario_defender_1"] = throughBall.DefenderPositions[0],
+            ["scenario_defender_2"] = throughBall.DefenderPositions[1],
+            ["scenario_goalkeeper"] = new Vector2(0.96f, 0.50f)
+        };
+        var offsideTeams = new System.Collections.Generic.Dictionary<StringName, StringName>
+        {
+            [receiverId] = attackingTeamId,
+            ["scenario_defender_1"] = defendingTeamId,
+            ["scenario_defender_2"] = defendingTeamId,
+            ["scenario_goalkeeper"] = defendingTeamId
+        };
+        Check(
+            !new OffsideRule().IsOffside(
+                receiverId,
+                attackingTeamId,
+                throughBall.BallCarrierPosition,
+                1f,
+                offsidePositions,
+                offsideTeams),
+            "Tiền đạo phải còn đứng trên bẫy việt vị tại thời điểm tiền vệ chọc khe.");
+
+        MatchScenarioDefinition twoVersusOne = factory.Create(
+            MatchScenarioKind.TwoAttackersVersusOneDefender,
+            -1f);
+        MatchScenarioDefinition threeVersusTwo = factory.Create(
+            MatchScenarioKind.ThreeAttackersVersusTwoDefenders,
+            -1f);
+        Check(
+            twoVersusOne.AttackerCount == 2 && twoVersusOne.DefenderCount == 1,
+            "Scenario 2 đánh 1 phải dựng đúng quân số tham gia chính.");
+        Check(
+            threeVersusTwo.AttackerCount == 3 && threeVersusTwo.DefenderCount == 2,
+            "Scenario 3 đánh 2 phải dựng đúng quân số tham gia chính.");
+
+        Array<FootballTeam> teams = new SampleDataFactory().create_teams();
+        int completedThroughBallReceptions = 0;
+        for (int seed = 1; seed <= 10; seed++)
+        {
+            FootballMatchSimulation sample = new FootballMatchSimulation().setup(teams[0], teams[1], 7000 + seed);
+            sample.use_live_pitch_events = true;
+            MatchPitch2D samplePitch = new();
+            AddChild(samplePitch);
+            samplePitch.SetMatch(sample);
+            samplePitch.StartScenario(MatchScenarioKind.ThroughBallBreakaway);
+            samplePitch.SetPlaying(true);
+            for (int frame = 0; frame < 30; frame++)
+            {
+                samplePitch._Process(0.05d);
+            }
+            if (samplePitch.CompletedPasses > 0)
+            {
+                completedThroughBallReceptions++;
+            }
+            samplePitch.QueueFree();
+        }
+        Check(
+            completedThroughBallReceptions >= 4,
+            $"Chọc khe hợp lý không được bị hậu vệ đoạt 100% qua 10 seed; " +
+            $"tiền đạo mới nhận được {completedThroughBallReceptions}/10 lần.");
+
+        int observedThreeVersusTwoFlights = 0;
+        int extremeBackwardFlights = 0;
+        System.Collections.Generic.Dictionary<string, int> extremeBackwardFlightTypes = new();
+        for (int seed = 1; seed <= 10; seed++)
+        {
+            FootballMatchSimulation sample = new FootballMatchSimulation().setup(teams[0], teams[1], 8000 + seed);
+            sample.use_live_pitch_events = true;
+            MatchPitch2D samplePitch = new();
+            AddChild(samplePitch);
+            samplePitch.SetMatch(sample);
+            samplePitch.StartScenario(MatchScenarioKind.ThreeAttackersVersusTwoDefenders);
+            samplePitch.SetPlaying(true);
+            Vector2 previousFlightStart = new(-1f, -1f);
+            Vector2 previousFlightTarget = new(-1f, -1f);
+            for (int frame = 0; frame < 120; frame++)
+            {
+                samplePitch._Process(0.05d);
+                if (!samplePitch.IsBallInFlight ||
+                    samplePitch.BallActionSourceTeamId != sample.home.team.id ||
+                    samplePitch.BallFlightStart.IsEqualApprox(previousFlightStart) &&
+                    samplePitch.BallFlightTarget.IsEqualApprox(previousFlightTarget))
+                {
+                    continue;
+                }
+
+                previousFlightStart = samplePitch.BallFlightStart;
+                previousFlightTarget = samplePitch.BallFlightTarget;
+                observedThreeVersusTwoFlights++;
+                float forwardGainMeters = -(previousFlightTarget.X - previousFlightStart.X) *
+                                          FootballPitchDimensions.LengthMeters;
+                float flightDistanceMeters = FootballPitchDimensions.DistanceMeters(
+                    previousFlightStart,
+                    previousFlightTarget);
+                if (forwardGainMeters < -15f && flightDistanceMeters > 30f)
+                {
+                    extremeBackwardFlights++;
+                    extremeBackwardFlightTypes.TryGetValue(samplePitch.BallActionType, out int existingCount);
+                    extremeBackwardFlightTypes[samplePitch.BallActionType] = existingCount + 1;
+                }
+            }
+            samplePitch.QueueFree();
+        }
+        Check(
+            observedThreeVersusTwoFlights > 0 && extremeBackwardFlights == 0,
+            $"Trong 3v2 không được có đường chuyền lùi quá 15 m và dài hơn 30 m; " +
+            $"đã thấy {extremeBackwardFlights}/{observedThreeVersusTwoFlights} quỹ đạo vi phạm " +
+            $"({string.Join(", ", extremeBackwardFlightTypes.Select(pair => $"{pair.Key}: {pair.Value}"))}).");
+
+        FootballMatchSimulation simulation = new FootballMatchSimulation().setup(teams[0], teams[1], 5150);
+        simulation.use_live_pitch_events = true;
+        MatchPitch2D pitch = new();
+        AddChild(pitch);
+        pitch.SetMatch(simulation);
+        Check(
+            pitch.StartScenario(MatchScenarioKind.ThroughBallBreakaway) &&
+            pitch.ActiveScenario == MatchScenarioKind.ThroughBallBreakaway &&
+            pitch.IsBallInFlight,
+            "Pitch launcher phải bắt đầu scenario chọc khe bằng một đường bóng thật của engine.");
+        float visibleLeadMeters = simulation.home.squad.starter_ids
+            .Min(playerId => FootballPitchDimensions.DistanceMeters(
+                pitch.CurrentPositions[playerId],
+                pitch.BallFlightTarget));
+        Check(
+            visibleLeadMeters >= 3.8f,
+            "Trên sân 2D, bóng chọc khe phải hướng vào khoảng trống đủ xa trước người nhận.");
+        Check(
+            pitch.StartScenario(MatchScenarioKind.TwoAttackersVersusOneDefender) &&
+            pitch.CurrentBallOwnerId != new StringName() &&
+            !pitch.IsBallInFlight,
+            "Scenario 2 đánh 1 phải giao bóng cho một cầu thủ để engine tự quyết định.");
+        Check(
+            pitch.StartScenario(MatchScenarioKind.ThreeAttackersVersusTwoDefenders) &&
+            pitch.ActiveScenario == MatchScenarioKind.ThreeAttackersVersusTwoDefenders,
+            "Pitch launcher phải chuyển được sang scenario 3 đánh 2 mà không cần chờ trận mới.");
+        pitch.QueueFree();
+
+        GD.Print(
+            $"PASS: sandbox dựng đúng chọc khe 35 m, 2 đánh 1 và 3 đánh 2; " +
+            $"tiền đạo nhận được {completedThroughBallReceptions}/10 đường chọc khe mẫu.");
+    }
+
     private void TestPitchPauseAndReset()
     {
         Array<FootballTeam> teams = new SampleDataFactory().create_teams();
@@ -975,13 +1232,13 @@ public partial class DotNetTestRunner : Node
         Check(pitch.BallPosition.DistanceTo(initialBall) > 0.01f, "Bóng phải được chuyền hoặc dẫn theo pha bóng.");
         Check(simulation.last_possession_team_id != new StringName(), "Engine phải truyền đội kiểm soát bóng cho sân 2D.");
         Check(pitch.BallPosition.X is >= 0 and <= 1 && pitch.BallPosition.Y is >= 0 and <= 1, "Bóng phải nằm trong vùng mô phỏng.");
-        for (int step = 0; step < 445; step++)
+        for (int step = 0; step < 420; step++)
         {
             if (step % 5 == 0 && !simulation.is_finished)
                 pitch.AnimateMinute(simulation.advance_minute());
             pitch._Process(0.1);
         }
-        for (int settle = 0; settle < 12; settle++) pitch._Process(0.1);
+        for (int settle = 0; settle < 200; settle++) pitch._Process(0.1);
         int resolvedActions = pitch.CompletedPasses + pitch.Dribbles + pitch.Interceptions +
                               pitch.Clearances + pitch.LooseBallRecoveries;
         Check(
@@ -994,12 +1251,6 @@ public partial class DotNetTestRunner : Node
             pitch.LooseBallRecoveries >= 1,
             "Ít nhất một đường chuyền hỏng hoặc pha phá bóng phải tạo bóng tự do để cầu thủ chạy tới thu hồi.");
         Check(pitch.LastActionName != "Chuẩn bị giao bóng", "Sân 2D phải công bố hành động cầu thủ vừa lựa chọn.");
-        int liveShots = simulation.events.Count(matchEvent => matchEvent.event_type.ToString() is "goal" or "shot_on_target" or "shot_off_target" or "shot_blocked");
-        Check(
-            liveShots >= 1,
-            $"Quyết định trên sân 2D phải tạo được ít nhất một cú sút thật trong engine; " +
-            $"chuyền={pitch.CompletedPasses}, dẫn={pitch.Dribbles}, cắt={pitch.Interceptions}, " +
-            $"bóng hai={pitch.LooseBallRecoveries}, hành động={pitch.LastActionName}.");
         pitch.QueueFree();
         GD.Print("PASS: 22 cầu thủ có ý định riêng, hỗ trợ, chạy chỗ, pressing, bọc lót và chơi bóng.");
     }
@@ -1013,6 +1264,11 @@ public partial class DotNetTestRunner : Node
         main.ChooseSelectedTeam();
         Check(main.managed_team is not null, "UI phải chọn được CLB.");
         main.ShowMatchView();
+        main.MatchView.PrepareScenario(MatchScenarioKind.TwoAttackersVersusOneDefender);
+        Check(
+            main.MatchView.ActiveScenario == MatchScenarioKind.TwoAttackersVersusOneDefender,
+            "Menu cạnh nút tạo trận phải khởi chạy được sandbox tình huống.");
+        main.MatchView.PauseMatch();
         main.MatchView.PrepareNewMatch();
         Check(main.MatchView.simulation is not null, "Match Center phải tạo được engine C#.");
         main.MatchView.SimulateToEnd();

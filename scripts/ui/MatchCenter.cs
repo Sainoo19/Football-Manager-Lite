@@ -17,6 +17,7 @@ public partial class MatchCenter : Control
     public FootballTeam? managed_team { get; private set; }
     public Array<FootballTeam> opponents { get; } = new();
     public FootballMatchSimulation? simulation { get; private set; }
+    public MatchScenarioKind? ActiveScenario => _pitchView?.ActiveScenario;
 
     private OptionButton _opponentOption = null!;
     private Label _homeNameLabel = null!;
@@ -138,6 +139,7 @@ public partial class MatchCenter : Control
         var newMatchButton = new Button { Text = "Tạo trận mới", CustomMinimumSize = new Vector2(140, 40) };
         newMatchButton.Pressed += PrepareNewMatch;
         row.AddChild(newMatchButton);
+        row.AddChild(BuildScenarioMenu());
         return panel;
     }
 
