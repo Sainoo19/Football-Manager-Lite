@@ -11,6 +11,7 @@ public partial class DotNetTestRunner : Node
         {
             TestSquadLimits();
             TestLiveMatchClock();
+            PlayerPositionInterpolatorTests.Run();
             TestFootballFundamentalsRuntimeAndTechnique();
             TestFreeKickRestartTimingAndDistance();
             TestPenaltyAdvantageAndDiscipline();

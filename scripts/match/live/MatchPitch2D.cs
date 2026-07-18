@@ -12,6 +12,7 @@ public partial class MatchPitch2D : Control
     private static readonly Color AwayColor = new("ff5d73");
     private static readonly Color BallColor = new("f7fbff");
     private readonly LiveMatchEngine _engine = new();
+    private readonly PlayerPositionInterpolator _playerPositionInterpolator = new();
 
     public FootballMatchSimulation? Simulation => _engine.Simulation;
     public IReadOnlyDictionary<StringName, Vector2> BasePositions => _engine.BasePositionView;
@@ -96,6 +97,7 @@ public partial class MatchPitch2D : Control
     public override void _Process(double deltaValue)
     {
         _engine.Process(deltaValue);
+        _playerPositionInterpolator.Capture(CurrentPositions);
         QueueRedraw();
     }
 
@@ -107,6 +109,7 @@ public partial class MatchPitch2D : Control
     public void SetMatch(FootballMatchSimulation simulation)
     {
         _engine.SetMatch(simulation);
+        _playerPositionInterpolator.Reset(CurrentPositions);
         QueueRedraw();
     }
 
@@ -118,18 +121,21 @@ public partial class MatchPitch2D : Control
     public void AnimateMinute(Array<FootballMatchEvent> newEvents)
     {
         _engine.AnimateMinute(newEvents);
+        _playerPositionInterpolator.Capture(CurrentPositions);
         QueueRedraw();
     }
 
     public void AdvanceGameTime(double gameDeltaSeconds)
     {
         _engine.AdvanceGameTime(gameDeltaSeconds);
+        _playerPositionInterpolator.Capture(CurrentPositions);
         QueueRedraw();
     }
 
     public Array<FootballMatchEvent> AdvanceSynchronizedGameTime(double gameDeltaSeconds)
     {
         Array<FootballMatchEvent> events = _engine.AdvanceSynchronizedGameTime(gameDeltaSeconds);
+        _playerPositionInterpolator.Capture(CurrentPositions);
         QueueRedraw();
         return events;
     }
@@ -137,6 +143,10 @@ public partial class MatchPitch2D : Control
     public bool StartScenario(MatchScenarioKind kind)
     {
         bool started = _engine.Execute(new LiveMatchCommand(LiveMatchCommandKind.StartScenario, kind));
+        if (started)
+        {
+            _playerPositionInterpolator.Reset(CurrentPositions);
+        }
         QueueRedraw();
         return started;
     }
@@ -148,7 +158,12 @@ public partial class MatchPitch2D : Control
 
     internal bool OverridePlayerPosition(StringName playerId, Vector2 position)
     {
-        return _engine.OverridePlayerPosition(playerId, position);
+        bool overridden = _engine.OverridePlayerPosition(playerId, position);
+        if (overridden)
+        {
+            _playerPositionInterpolator.Capture(CurrentPositions);
+        }
+        return overridden;
     }
 
     private void HandleActionChanged(string description)

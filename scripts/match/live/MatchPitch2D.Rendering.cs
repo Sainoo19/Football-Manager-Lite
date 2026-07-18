@@ -77,7 +77,11 @@ public partial class MatchPitch2D
         int fontSize = Mathf.RoundToInt(Mathf.Clamp(playerRadius * 0.92f, 9f, 13f));
         foreach ((StringName playerId, Vector2 normalized) in CurrentPositions)
         {
-            Vector2 point = ToFieldPoint(normalized, field);
+            Vector2 renderedPosition = _playerPositionInterpolator.Interpolate(
+                playerId,
+                normalized,
+                _engine.FixedStepInterpolationAlpha);
+            Vector2 point = ToFieldPoint(renderedPosition, field);
             bool isHome = PlayerTeams[playerId] == Simulation.home.team.id;
             Color color = isHome ? HomeColor : AwayColor;
             if (PlayerRoles[playerId] == "GK")

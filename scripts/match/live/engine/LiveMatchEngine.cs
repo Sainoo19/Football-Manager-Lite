@@ -217,6 +217,10 @@ public sealed partial class LiveMatchEngine
     public IReadOnlyDictionary<StringName, Vector2> PositionView => _state.CurrentPositionView;
     public IReadOnlyDictionary<StringName, Vector2> BasePositionView => _state.BasePositionView;
     public IReadOnlyDictionary<StringName, Vector2> TargetPositionView => _state.TargetPositionView;
+    internal float FixedStepInterpolationAlpha => (float)System.Math.Clamp(
+        _fixedStepAccumulatorSeconds / _configuration.FixedStepSeconds,
+        0d,
+        1d);
     internal IReadOnlyDictionary<StringName, StringName> PlayerTeams => _state.PlayerTeamView;
     internal IReadOnlyDictionary<StringName, string> PlayerRoles => _state.PlayerRoleView;
     internal IReadOnlyDictionary<StringName, int> PlayerNumbers => _state.PlayerNumberView;
