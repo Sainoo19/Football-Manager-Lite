@@ -9,6 +9,7 @@ public sealed partial class LiveMatchEngine
     {
         ClearDirectAttack();
         ResetCarrySequence();
+        SuspendTrackedPossession();
         _state.IsBallVisible = true;
         _state.BallOwnerId = new StringName();
         _state.IsLooseBallActive = true;

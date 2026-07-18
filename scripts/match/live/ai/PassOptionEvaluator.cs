@@ -8,7 +8,7 @@ public sealed class PassOptionEvaluator
         float forwardGainMeters,
         float distanceMeters)
     {
-        if (nearestOpponentDistanceMeters < 1.6f || passingLaneRisk > 0.82f)
+        if (nearestOpponentDistanceMeters < 1.6f || passingLaneRisk > 0.90f)
         {
             return false;
         }

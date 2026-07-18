@@ -234,6 +234,14 @@ public sealed partial class LiveMatchEngine
         float distanceMeters = isGoalkeeperPunch ? 13f : 17f;
         Vector2 destination = SpaceEvaluator.ClampToPitch(
             FootballPitchDimensions.ToNormalized(ballMeters + direction * distanceMeters));
+        float outOfPlayRoll = DecisionRoll(playerId, _actionSourceId, _decisionSerial + 877);
+        if (!isGoalkeeperPunch &&
+            outOfPlayRoll < _configuration.DefensiveHeaderOutOfPlayProbability)
+        {
+            destination = new Vector2(
+                Mathf.Clamp(destination.X, 0.025f, 0.975f),
+                BallPosition.Y < 0.5f ? -0.02f : 1.02f);
+        }
         StartBallAction(
             destination,
             0.85f,
@@ -259,8 +267,7 @@ public sealed partial class LiveMatchEngine
     private void SetAerialActionOwner(StringName playerId)
     {
         _state.BallOwnerId = playerId;
-        _state.ActiveTeamId = _playerTeams[playerId];
-        Simulation?.set_live_possession(_state.ActiveTeamId);
+        SetTrackedPossession(_playerTeams[playerId]);
         BallPosition = CurrentPositions[playerId];
     }
 

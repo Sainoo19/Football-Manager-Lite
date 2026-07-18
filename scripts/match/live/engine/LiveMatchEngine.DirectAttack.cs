@@ -12,7 +12,7 @@ public sealed partial class LiveMatchEngine
         }
 
         _directAttackOwnerId = receiverId;
-        _directAttackActionsRemaining = 6;
+        _directAttackActionsRemaining = _configuration.MaximumDirectAttackActions;
     }
 
     private bool ShouldBeginDirectAttack(StringName receiverId, BallActionKind completedKind)
@@ -55,8 +55,12 @@ public sealed partial class LiveMatchEngine
         if (continuation == DirectAttackContinuation.Shoot)
         {
             ClearDirectAttack();
-            StartLiveShot(ownerId, pressureDistanceMeters);
-            return true;
+            if (ShouldShoot(ownerId, pressureDistanceMeters))
+            {
+                StartLiveShot(ownerId, pressureDistanceMeters);
+                return true;
+            }
+            return false;
         }
 
         if (continuation == DirectAttackContinuation.Carry)

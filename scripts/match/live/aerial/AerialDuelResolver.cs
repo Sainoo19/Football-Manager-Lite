@@ -80,6 +80,12 @@ public readonly struct AerialDuelResolution
 public sealed class AerialDuelResolver
 {
     private const float MaximumContestDistanceMeters = 3.2f;
+    private readonly float _headerShotProbability;
+
+    public AerialDuelResolver(float headerShotProbability = 0.74f)
+    {
+        _headerShotProbability = headerShotProbability;
+    }
 
     public AerialDuelResolution Resolve(
         IReadOnlyList<AerialDuelCandidate> candidates,
@@ -131,7 +137,8 @@ public sealed class AerialDuelResolver
         }
 
         bool attackingRole = selected.Role is "ST" or "LW" or "RW" or "AM";
-        if (attackingRole && selected.DistanceToAttackingGoalMeters <= 18f && actionRoll < 0.74f)
+        if (attackingRole && selected.DistanceToAttackingGoalMeters <= 16f &&
+            actionRoll < _headerShotProbability)
         {
             return new AerialDuelResolution(selected.PlayerId, AerialDuelOutcome.HeaderShot);
         }

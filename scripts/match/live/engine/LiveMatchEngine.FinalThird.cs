@@ -20,8 +20,12 @@ public sealed partial class LiveMatchEngine
 
         if (action == FinalThirdAction.Shoot)
         {
-            StartLiveShot(ownerId, pressureDistanceMeters);
-            return true;
+            if (ShouldShoot(ownerId, pressureDistanceMeters))
+            {
+                StartLiveShot(ownerId, pressureDistanceMeters);
+                return true;
+            }
+            return false;
         }
 
         if (action == FinalThirdAction.Carry)

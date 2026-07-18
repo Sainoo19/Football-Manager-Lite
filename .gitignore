@@ -24,3 +24,6 @@ obj/
 
 # macOS
 .DS_Store
+
+# Generated test and balance reports (local artifacts)
+/.artifacts/test-reports/

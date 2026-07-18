@@ -28,7 +28,11 @@ public readonly struct DefenderEngagementContext
         bool isChallengeOnCooldown,
         bool isCarrierBackToGoal,
         bool hasCover,
-        float decisionRoll)
+        float decisionRoll,
+        bool isInsideOwnPenaltyArea = false,
+        float penaltyAreaChallengeProbability = 0.18f,
+        bool hasYellowCard = false,
+        float bookedPlayerChallengeProbability = 1f)
     {
         DefenderPosition = defenderPosition;
         CarrierPosition = carrierPosition;
@@ -46,6 +50,10 @@ public readonly struct DefenderEngagementContext
         IsCarrierBackToGoal = isCarrierBackToGoal;
         HasCover = hasCover;
         DecisionRoll = decisionRoll;
+        IsInsideOwnPenaltyArea = isInsideOwnPenaltyArea;
+        PenaltyAreaChallengeProbability = penaltyAreaChallengeProbability;
+        HasYellowCard = hasYellowCard;
+        BookedPlayerChallengeProbability = bookedPlayerChallengeProbability;
     }
 
     public Vector2 DefenderPosition { get; }
@@ -64,6 +72,10 @@ public readonly struct DefenderEngagementContext
     public bool IsCarrierBackToGoal { get; }
     public bool HasCover { get; }
     public float DecisionRoll { get; }
+    public bool IsInsideOwnPenaltyArea { get; }
+    public float PenaltyAreaChallengeProbability { get; }
+    public bool HasYellowCard { get; }
+    public float BookedPlayerChallengeProbability { get; }
 }
 
 public readonly struct DefenderEngagementPlan
@@ -112,6 +124,20 @@ public sealed class DefenderEngagementPlanner
         if (context.ExchangeCount < 2)
         {
             return DefenderEngagementType.Jockey;
+        }
+        if (context.IsInsideOwnPenaltyArea &&
+            context.DecisionRoll >= context.PenaltyAreaChallengeProbability)
+        {
+            return context.DistanceMeters <= 1.55f
+                ? DefenderEngagementType.Contain
+                : DefenderEngagementType.Jockey;
+        }
+        if (context.HasYellowCard &&
+            context.DecisionRoll >= context.BookedPlayerChallengeProbability)
+        {
+            return context.DistanceMeters <= 1.55f
+                ? DefenderEngagementType.Contain
+                : DefenderEngagementType.Jockey;
         }
         if (context.IsCarrierBackToGoal &&
             context.DistanceMeters <= 1.65f &&

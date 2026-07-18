@@ -127,6 +127,13 @@ public partial class MatchPitch2D : Control
         QueueRedraw();
     }
 
+    public Array<FootballMatchEvent> AdvanceSynchronizedGameTime(double gameDeltaSeconds)
+    {
+        Array<FootballMatchEvent> events = _engine.AdvanceSynchronizedGameTime(gameDeltaSeconds);
+        QueueRedraw();
+        return events;
+    }
+
     public bool StartScenario(MatchScenarioKind kind)
     {
         bool started = _engine.Execute(new LiveMatchCommand(LiveMatchCommandKind.StartScenario, kind));

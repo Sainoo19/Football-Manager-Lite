@@ -13,8 +13,7 @@ public sealed partial class LiveMatchEngine
         StringName ownerId = _state.BallOwnerId;
         if (_playerTeams[ownerId] != _state.ActiveTeamId)
         {
-            _state.ActiveTeamId = _playerTeams[ownerId];
-            Simulation.set_live_possession(_state.ActiveTeamId);
+            SetTrackedPossession(_playerTeams[ownerId]);
             SelectPhasePlayers();
         }
 
@@ -96,7 +95,12 @@ public sealed partial class LiveMatchEngine
         }
 
         int creativeSkill = ((owner?.passing ?? 50) + (owner?.vision ?? 50)) / 2;
-        BallActionKind kind = target == _primaryRunnerId && creativeSkill >= 68 && !underPressure
+        bool isCredibleThroughBall = target == _primaryRunnerId &&
+                                     creativeSkill * 2 >= _configuration.MinimumThroughBallCreativeSkill &&
+                                     pass.ForwardGainMeters >= 8f &&
+                                     pass.DistanceMeters >= 18f &&
+                                     !underPressure;
+        BallActionKind kind = isCredibleThroughBall
             ? BallActionKind.ThroughBall
             : BallActionKind.Pass;
         StartPass(target, kind);
@@ -196,9 +200,13 @@ public sealed partial class LiveMatchEngine
         FootballPlayer? offender = GetPlayer(offenderId);
         float cardRoll = DecisionRoll(offenderId, victimId, _decisionSerial + 83);
         bool stopsClearChance = _attackProgress > 0.78f && _playerRoles[victimId] is "ST" or "LW" or "RW" or "AM";
-        StringName card = stopsClearChance && cardRoll < 0.18f
+        StringName card = stopsClearChance && cardRoll < _configuration.ClearChanceRedCardProbability
             ? "red"
-            : cardRoll < Mathf.Clamp(0.30f + (68 - (offender?.tackling ?? 50)) / 120f, 0.18f, 0.58f)
+            : cardRoll < Mathf.Clamp(
+                _configuration.YellowCardBaseProbability +
+                (68 - (offender?.tackling ?? 50)) / 200f,
+                0.10f,
+                0.30f)
                 ? "yellow"
                 : new StringName();
 
@@ -286,6 +294,18 @@ public sealed partial class LiveMatchEngine
             if (candidateId == _state.BallOwnerId || _playerTeams[candidateId] != _state.ActiveTeamId || _playerRoles[candidateId] == "GK")
                 continue;
             bool candidateIsOffside = IsCurrentlyOffside(candidateId);
+            if (candidateIsOffside)
+            {
+                float offsideAvoidanceProbability = Mathf.Lerp(
+                    _configuration.MinimumOffsideAvoidanceProbability,
+                    _configuration.MaximumOffsideAvoidanceProbability,
+                    ownerVision / 99f);
+                if (DecisionRoll(_state.BallOwnerId, candidateId, _decisionSerial + 991) <
+                    offsideAvoidanceProbability)
+                {
+                    continue;
+                }
+            }
             Vector2 candidate = CurrentPositions[candidateId];
             float distanceMeters = FootballPitchDimensions.DistanceMeters(owner, candidate);
             float forwardGainMeters = direction * (candidate.X - owner.X) *

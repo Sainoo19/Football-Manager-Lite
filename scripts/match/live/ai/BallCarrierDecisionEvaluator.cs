@@ -1,6 +1,12 @@
 public sealed class BallCarrierDecisionEvaluator
 {
     private const int MaximumPatientCarries = 5;
+    private readonly float _underPressureDribbleProbability;
+
+    public BallCarrierDecisionEvaluator(float underPressureDribbleProbability = 0.28f)
+    {
+        _underPressureDribbleProbability = underPressureDribbleProbability;
+    }
 
     public bool ShouldKeepCarrying(
         bool isUnderPressure,
@@ -17,7 +23,9 @@ public sealed class BallCarrierDecisionEvaluator
 
         if (isUnderPressure)
         {
-            return dribbling >= 74 && consecutiveCarries < 2 && decisionRoll < 0.28f;
+            return dribbling >= 76 &&
+                   consecutiveCarries < 2 &&
+                   decisionRoll < _underPressureDribbleProbability;
         }
 
         bool carrierHasSpace = nearestOpponentDistanceMeters >= 5f;

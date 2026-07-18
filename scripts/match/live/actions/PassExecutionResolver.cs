@@ -76,7 +76,10 @@ public sealed class PassExecutionResolver
         float lateralError = SignedRoll(directionRoll) * lateralErrorLimit;
         float powerError = SignedRoll(powerRoll) * powerErrorLimit;
         Vector2 actualMeters = intendedMeters + lateral * lateralError + forward * powerError;
-        Vector2 actualTarget = SpaceEvaluator.ClampToPitch(FootballPitchDimensions.ToNormalized(actualMeters));
+        Vector2 normalizedTarget = FootballPitchDimensions.ToNormalized(actualMeters);
+        Vector2 actualTarget = new(
+            Mathf.Clamp(normalizedTarget.X, -0.025f, 1.025f),
+            Mathf.Clamp(normalizedTarget.Y, -0.035f, 1.035f));
 
         float baseSpeed = passType switch
         {

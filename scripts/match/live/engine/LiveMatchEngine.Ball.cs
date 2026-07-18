@@ -106,6 +106,7 @@ public sealed partial class LiveMatchEngine
         }
         if (type == "full_time")
         {
+            CompletePossessionSpell();
             _ballActionActive = false;
             _aerialFlightActive = false;
             _aerialContenderIds.Clear();
@@ -135,20 +136,22 @@ public sealed partial class LiveMatchEngine
         }
         Vector2 runTarget = TargetPositions.GetValueOrDefault(receiverId, receiverPosition);
         BallActionKind kind = requestedKind;
+        StringName passerId = _state.BallOwnerId;
+        FootballPlayer? passer = GetPlayer(passerId);
         float receiverDistanceMeters = FootballPitchDimensions.DistanceMeters(BallPosition, receiverPosition);
         float forwardGainMeters = AttackDirection(_state.ActiveTeamId) * (receiverPosition.X - BallPosition.X) *
                                   FootballPitchDimensions.LengthMeters;
         if (kind == BallActionKind.Pass &&
             receiverId == _primaryRunnerId &&
-            receiverDistanceMeters > 17f &&
-            forwardGainMeters >= 4f)
+            receiverDistanceMeters > 20f &&
+            forwardGainMeters >= 8f &&
+            (passer?.passing ?? 50) + (passer?.vision ?? 50) >=
+            _configuration.MinimumThroughBallCreativeSkill)
         {
             kind = BallActionKind.ThroughBall;
         }
-        StringName passerId = _state.BallOwnerId;
-        FootballPlayer? passer = GetPlayer(passerId);
         if (kind == BallActionKind.Pass &&
-            receiverDistanceMeters >= 24f &&
+            receiverDistanceMeters >= _configuration.MinimumLoftedPassDistanceMeters &&
             (passer?.passing ?? 50) + (passer?.vision ?? 50) >= 126)
         {
             kind = BallActionKind.LoftedPass;
@@ -309,6 +312,16 @@ public sealed partial class LiveMatchEngine
         _ballVisualHeight = 0f;
         _ballVerticalVelocityMetersPerSecond = 0f;
 
+        if (completedKind != BallActionKind.Shot &&
+            (BallPosition.X is < 0f or > 1f || BallPosition.Y is < 0f or > 1f))
+        {
+            StartLooseBall(
+                "Bóng đi hết đường biên — hai đội chuẩn bị tình huống cố định",
+                RollingVelocityAfterFlight(completedKind));
+            _pendingOffsideReceiverId = new StringName();
+            return;
+        }
+
         if (completedKind == BallActionKind.Shot)
         {
             CompleteLiveShot();
@@ -358,6 +371,14 @@ public sealed partial class LiveMatchEngine
 
     private void CompletePassReception(StringName receiverId, BallActionKind completedKind)
     {
+        if (BallPosition.X is < 0f or > 1f || BallPosition.Y is < 0f or > 1f)
+        {
+            StartLooseBall(
+                "Đường chuyền đi hết biên — trọng tài cho đội còn lại đưa bóng vào cuộc",
+                RollingVelocityAfterFlight(completedKind));
+            return;
+        }
+
         float controlDistanceMeters = completedKind switch
         {
             BallActionKind.ThroughBall => 3.2f,
@@ -365,6 +386,7 @@ public sealed partial class LiveMatchEngine
             BallActionKind.Cross => 2.7f,
             _ => 2.2f
         };
+        controlDistanceMeters *= _configuration.PassControlDistanceMultiplier;
         if (receiverId != new StringName() &&
             CurrentPositions.TryGetValue(receiverId, out Vector2 receiverPosition) &&
             FootballPitchDimensions.DistanceMeters(receiverPosition, BallPosition) <= controlDistanceMeters)
@@ -492,6 +514,10 @@ public sealed partial class LiveMatchEngine
         uint value = unchecked(StableHash(firstId) * 2654435761u) ^ seed;
         value ^= unchecked(StableHash(secondId) * 2246822519u);
         value ^= unchecked((uint)serial * 3266489917u);
+        value ^= value >> 16;
+        value *= 0x85ebca6bu;
+        value ^= value >> 13;
+        value *= 0xc2b2ae35u;
         value ^= value >> 16;
         return (value & 0x00ffffff) / 16777215f;
     }

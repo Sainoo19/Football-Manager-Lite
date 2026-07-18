@@ -72,8 +72,7 @@ public sealed partial class LiveMatchEngine
 
         _state.BallOwnerId = ballCarrierId;
         BallPosition = definition.BallCarrierPosition;
-        _state.ActiveTeamId = attackingTeamId;
-        Simulation.set_live_possession(attackingTeamId);
+        SetTrackedPossession(attackingTeamId);
         _attackProgress = AttackProgress(attackingTeamId, BallPosition);
         _phaseLane = BallPosition.Y;
         SelectPhasePlayers();
@@ -136,7 +135,7 @@ public sealed partial class LiveMatchEngine
         ResetCarrySequence();
         _state.IsBallVisible = true;
         _state.IsRestartBallPlaced = true;
-        _state.ActiveTeamId = attackingTeamId;
+        SetTrackedPossession(attackingTeamId);
         _nextIntentPlanTime = 0f;
     }
 

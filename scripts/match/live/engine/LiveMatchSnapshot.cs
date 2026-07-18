@@ -98,7 +98,8 @@ public sealed class LiveMatchSnapshot
         bool isBallInFlight,
         bool isLooseBall,
         StringName pendingRestartType,
-        LiveMatchMetrics metrics)
+        LiveMatchMetrics metrics,
+        LiveMatchAnalyticsSnapshot analytics)
     {
         Positions = CopyPositions(positions);
         TargetPositions = CopyPositions(targetPositions);
@@ -113,6 +114,7 @@ public sealed class LiveMatchSnapshot
         IsLooseBall = isLooseBall;
         PendingRestartType = pendingRestartType;
         Metrics = metrics;
+        Analytics = analytics;
     }
 
     public IReadOnlyDictionary<StringName, Vector2> Positions { get; }
@@ -128,6 +130,7 @@ public sealed class LiveMatchSnapshot
     public bool IsLooseBall { get; }
     public StringName PendingRestartType { get; }
     public LiveMatchMetrics Metrics { get; }
+    public LiveMatchAnalyticsSnapshot Analytics { get; }
 
     private static IReadOnlyDictionary<StringName, Vector2> CopyPositions(
         IReadOnlyDictionary<StringName, Vector2> source)

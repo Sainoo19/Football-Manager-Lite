@@ -32,6 +32,7 @@ public partial class DotNetTestRunner : Node
             GroundDuelTests.Run();
             GroundDuelScenarioIntegrationTests.Run();
             AerialBallTests.Run();
+            BalanceBatchTests.Run();
             AerialBallScenarioIntegrationTests.Run();
             TestPitchMovement();
             LiveMatchEngineIntegrationTests.Run();

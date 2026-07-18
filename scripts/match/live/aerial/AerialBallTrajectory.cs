@@ -114,9 +114,15 @@ public sealed class AerialBallTrajectoryPlanner
             minimumFlightTime,
             maximumFlightTime);
         float initialVerticalVelocity = GravityMetersPerSecondSquared * flightTime * 0.5f;
+        Vector2 finalLandingPoint = deliveryType is AerialDeliveryType.Clearance or
+            AerialDeliveryType.HeaderClearance
+            ? new Vector2(
+                Mathf.Clamp(landingPoint.X, -0.025f, 1.025f),
+                Mathf.Clamp(landingPoint.Y, -0.035f, 1.035f))
+            : SpaceEvaluator.ClampToPitch(landingPoint);
         return new AerialBallTrajectory(
             start,
-            SpaceEvaluator.ClampToPitch(landingPoint),
+            finalLandingPoint,
             flightTime,
             initialVerticalVelocity,
             GravityMetersPerSecondSquared,

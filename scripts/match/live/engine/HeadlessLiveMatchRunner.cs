@@ -47,12 +47,8 @@ public sealed class HeadlessLiveMatchRunner
         int stepCount = 0;
         while (!simulation.is_finished && stepCount < MaximumSteps)
         {
-            int elapsedMinutes = runtime.Advance(realStepSeconds);
-            engine.AdvanceGameTime(runtime.LastAdvancedGameSeconds);
-            for (int minute = 0; minute < elapsedMinutes && !simulation.is_finished; minute++)
-            {
-                engine.AnimateMinute(simulation.advance_minute());
-            }
+            runtime.Advance(realStepSeconds);
+            engine.AdvanceSynchronizedGameTime(runtime.LastAdvancedGameSeconds);
             stepCount++;
         }
 

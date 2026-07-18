@@ -42,6 +42,10 @@ public sealed partial class LiveMatchEngine
         Vector2 shooterPosition = CurrentPositions[shooterId];
         float attackDirection = AttackDirection(shootingTeamId);
         float goalX = AttackingGoalX(shootingTeamId);
+        _pendingShotDistanceMeters = FootballPitchDimensions.DistanceMeters(
+            shooterPosition,
+            new Vector2(goalX, 0.5f));
+        _pendingShotSituation = isHeader ? "header" : "open_play";
         Vector2 goalkeeperPosition = CurrentPositions.TryGetValue(goalkeeperId, out Vector2 currentGoalkeeperPosition)
             ? currentGoalkeeperPosition
             : new Vector2(goalX, 0.5f);
@@ -79,7 +83,8 @@ public sealed partial class LiveMatchEngine
         StringName nextOwner = new();
         if (DecisionRoll(shooterId, blockerId, _decisionSerial + 131) < blockChance)
         {
-            bool deflectsForCorner = DecisionRoll(shooterId, blockerId, _decisionSerial + 139) < 0.22f;
+            bool deflectsForCorner = DecisionRoll(shooterId, blockerId, _decisionSerial + 139) <
+                                     _configuration.BlockedShotCornerProbability;
             outcome = deflectsForCorner ? "blocked_corner" : "blocked";
             destination = deflectsForCorner
                 ? new Vector2(goalX, CurrentPositions[blockerId].Y < 0.5f ? 0.03f : 0.97f)

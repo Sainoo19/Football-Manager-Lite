@@ -17,6 +17,10 @@ public sealed partial class LiveMatchEngine
             LiveMatchEvent?.Invoke(matchEvent);
 
         string outcome = _pendingShotOutcome.ToString();
+        if (outcome == "goal")
+        {
+            RecordGoal(_pendingShotDistanceMeters, _pendingShotSituation);
+        }
         string resultText = outcome switch
         {
             "goal" => $"BÀN THẮNG — {PlayerName(_pendingShotShooterId)}",
@@ -48,6 +52,8 @@ public sealed partial class LiveMatchEngine
         _pendingShotShooterId = new StringName();
         _pendingShotGoalkeeperId = new StringName();
         _pendingShotBlockerId = new StringName();
+        _pendingShotDistanceMeters = 0f;
+        _pendingShotSituation = new StringName();
     }
 
     private void GivePossessionTo(StringName playerId, float decisionDelay)
@@ -59,8 +65,7 @@ public sealed partial class LiveMatchEngine
         _state.BallOwnerId = playerId;
         _runtime.SetPhase(LiveMatchPhase.InPossession);
         _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
-        _state.ActiveTeamId = _playerTeams[playerId];
-        Simulation.set_live_possession(_state.ActiveTeamId);
+        SetTrackedPossession(_playerTeams[playerId]);
         _attackProgress = Mathf.Clamp(AttackProgress(_state.ActiveTeamId, CurrentPositions[playerId]), 0.10f, 0.72f);
         _phaseLane = CurrentPositions[playerId].Y;
         SelectPhasePlayers();
@@ -78,6 +83,7 @@ public sealed partial class LiveMatchEngine
         ApplyPendingCardsAtStoppage();
         ResetCarrySequence();
         ClearDirectAttack();
+        SuspendTrackedPossession();
         if (restartType == "kickoff")
             ResetPlayersForKickoff(teamId);
         _state.BallOwnerId = new StringName();
@@ -219,8 +225,8 @@ public sealed partial class LiveMatchEngine
         _state.IsRestartBallPlaced = true;
         _state.IsBallVisible = true;
         Restarts++;
-        _state.ActiveTeamId = _state.RestartTeamId;
-        Simulation.set_live_possession(_state.ActiveTeamId);
+        RecordRestartTaken(_state.RestartType);
+        SetTrackedPossession(_state.RestartTeamId);
         SyncLineups(false);
 
         string type = _state.RestartType.ToString();
@@ -421,6 +427,8 @@ public sealed partial class LiveMatchEngine
         _pendingShotShooterId = takerId;
         _pendingShotGoalkeeperId = goalkeeperId;
         _pendingShotBlockerId = new StringName();
+        _pendingShotDistanceMeters = FootballPitchDimensions.PenaltySpotDistanceMeters;
+        _pendingShotSituation = "penalty";
         StartBallAction(
             destination,
             0.42f,
@@ -480,8 +488,7 @@ public sealed partial class LiveMatchEngine
         BallPosition = _state.RestartPosition;
         CurrentPositions[takerId] = _state.RestartPosition;
         _state.BallOwnerId = takerId;
-        _state.ActiveTeamId = _state.RestartTeamId;
-        Simulation.set_live_possession(_state.ActiveTeamId);
+        SetTrackedPossession(_state.RestartTeamId);
         _attackProgress = AttackProgress(_state.ActiveTeamId, _state.RestartPosition);
         _phaseLane = _state.RestartPosition.Y;
         SelectPhasePlayers();
@@ -634,11 +641,10 @@ public sealed partial class LiveMatchEngine
             TargetPositions[setup.ReceiverId] = setup.ReceiverPosition;
         }
 
-        _state.ActiveTeamId = kickingTeamId;
         _state.BallOwnerId = setup.TakerId;
         _kickoffReceiverId = setup.ReceiverId;
         _kickoffPassPending = setup.IsValid;
-        Simulation.set_live_possession(kickingTeamId);
+        SetTrackedPossession(kickingTeamId);
         _attackProgress = 0.5f;
         _phaseLane = 0.5f;
         _nextIntentPlanTime = 0f;

@@ -17,7 +17,7 @@ public sealed partial class LiveMatchEngine
             return false;
         }
 
-        if (!sequence.HasCarrier && distanceMeters > DuelDistanceRules.EngagementStartDistanceMeters)
+        if (!sequence.HasCarrier && distanceMeters > DuelDistanceRules.TackleAttemptDistanceMeters)
         {
             return false;
         }
@@ -34,6 +34,17 @@ public sealed partial class LiveMatchEngine
         if (distanceMeters > DuelDistanceRules.EngagementExitDistanceMeters)
         {
             sequence.AttachDefender(new StringName());
+            return false;
+        }
+        if (sequence.ExchangeCount >= _configuration.MaximumUnresolvedGroundDuelExchanges)
+        {
+            sequence.Reset();
+            StringName outletId = ChoosePassTarget(true);
+            if (outletId != new StringName())
+            {
+                StartPass(outletId, BallActionKind.Pass);
+                return true;
+            }
             return false;
         }
 
@@ -60,7 +71,11 @@ public sealed partial class LiveMatchEngine
                 challengeOnCooldown,
                 sequence.IsBackToGoal,
                 HasCoverFor(nearestDefenderId),
-                DecisionRoll(nearestDefenderId, carrierId, _decisionSerial + 601)));
+                DecisionRoll(nearestDefenderId, carrierId, _decisionSerial + 601),
+                IsInsideOwnPenaltyArea(CurrentPositions[nearestDefenderId], _playerTeams[nearestDefenderId]),
+                _configuration.PenaltyAreaChallengeProbability,
+                Simulation?.get_state(_playerTeams[nearestDefenderId])?.YellowCardCount(nearestDefenderId) > 0,
+                _configuration.BookedPlayerChallengeProbability));
         sequence.RecordEngagement(engagement);
         GroundDuelExchanges++;
         if (engagement.AttemptsChallenge && sequence.TouchCount >= 2)
@@ -142,7 +157,6 @@ public sealed partial class LiveMatchEngine
             _carryOwnerId = carrierId;
             _consecutiveCarries = 1;
         }
-        Dribbles++;
         _attackProgress = Mathf.Clamp(AttackProgress(_playerTeams[carrierId], touch.Target), 0.08f, 0.96f);
         _phaseLane = touch.Target.Y;
     }
@@ -190,6 +204,7 @@ public sealed partial class LiveMatchEngine
             ShoulderChallenges++;
             _state.DefenderChallengeReadyTimes[defenderId] = _state.VisualTime + 0.90f;
         }
+        Dribbles++;
 
         switch (resolution.Outcome)
         {
@@ -226,8 +241,7 @@ public sealed partial class LiveMatchEngine
         _carryOwnerId = new StringName();
         _consecutiveCarries = 0;
         _state.BallOwnerId = defenderId;
-        _state.ActiveTeamId = _playerTeams[defenderId];
-        Simulation?.set_live_possession(_state.ActiveTeamId);
+        SetTrackedPossession(_playerTeams[defenderId]);
         _attackProgress = Mathf.Clamp(AttackProgress(_state.ActiveTeamId, BallPosition), 0.16f, 0.62f);
         _phaseLane = CurrentPositions[defenderId].Y;
         Interceptions++;

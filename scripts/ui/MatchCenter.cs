@@ -52,11 +52,16 @@ public partial class MatchCenter : Control
             return;
         }
 
-        int elapsedMinutes = _matchClock.Advance(delta);
-        _pitchView.AdvanceGameTime(_matchClock.LastAdvancedGameSeconds);
-        for (int minute = 0; minute < elapsedMinutes && !simulation.is_finished; minute++)
+        _matchClock.Advance(delta);
+        Array<FootballMatchEvent> newEvents = _pitchView.AdvanceSynchronizedGameTime(
+            _matchClock.LastAdvancedGameSeconds);
+        foreach (FootballMatchEvent matchEvent in newEvents)
         {
-            OnMatchTick();
+            AppendEvent(matchEvent);
+        }
+        if (newEvents.Count > 0)
+        {
+            RefreshMatchState();
         }
 
         if (!simulation.is_finished)

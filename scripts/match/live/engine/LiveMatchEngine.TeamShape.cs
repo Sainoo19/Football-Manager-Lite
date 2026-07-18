@@ -4,10 +4,6 @@ using Godot.Collections;
 
 public sealed partial class LiveMatchEngine
 {
-    private const float PossessionIntentPlanningInterval = 0.18f;
-    private const float BallInFlightPlanningInterval = 0.12f;
-    private const float LooseBallPlanningInterval = 0.08f;
-
     private void UpdatePlayerTargets()
     {
         if (Simulation is null)
@@ -107,10 +103,10 @@ public sealed partial class LiveMatchEngine
         ApplyAerialContestTargets();
 
         float planningInterval = _state.IsLooseBallActive
-            ? LooseBallPlanningInterval
+            ? _configuration.LooseBallPlanningIntervalSeconds
             : _ballActionActive
-                ? BallInFlightPlanningInterval
-                : PossessionIntentPlanningInterval;
+                ? _configuration.BallInFlightPlanningIntervalSeconds
+                : _configuration.PossessionIntentPlanningIntervalSeconds;
         _nextIntentPlanTime = _state.VisualTime + planningInterval;
     }
 

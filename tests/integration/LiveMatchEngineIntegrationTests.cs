@@ -8,9 +8,28 @@ public static class LiveMatchEngineIntegrationTests
     public static void Run()
     {
         VerifyHeadlessMatchCompletesDeterministically();
+        VerifyPlaybackSpeedDoesNotChangeFullMatch();
         VerifySnapshotIsDetachedFromMutableEngineState();
         VerifyPitchAdapterMatchesDirectEngine();
         GD.Print("PASS: LiveMatchEngine chạy headless, snapshot bất biến và adapter sân giữ nguyên kết quả.");
+    }
+
+    private static void VerifyPlaybackSpeedDoesNotChangeFullMatch()
+    {
+        Array<FootballTeam> teams = new SampleDataFactory().create_teams();
+        HeadlessLiveMatchRunner runner = new();
+        HeadlessLiveMatchResult fast = runner.RunToFullTime(
+            new FootballMatchSimulation().setup(teams[0], teams[1], 2026071804),
+            MatchPlaybackSpeed.Fastest,
+            0.05d);
+        HeadlessLiveMatchResult realTime = runner.RunToFullTime(
+            new FootballMatchSimulation().setup(teams[0], teams[1], 2026071804),
+            MatchPlaybackSpeed.RealTime,
+            60d);
+
+        Check(fast.Simulation.score_text() == realTime.Simulation.score_text() &&
+              SnapshotsMatch(fast.FinalSnapshot, realTime.FinalSnapshot),
+            "Realtime và tăng tốc phải tạo đúng cùng diễn biến với cùng seed.");
     }
 
     private static void VerifyHeadlessMatchCompletesDeterministically()
@@ -101,6 +120,11 @@ public static class LiveMatchEngineIntegrationTests
                first.Metrics.AerialDuels == second.Metrics.AerialDuels &&
                first.Metrics.HeadersWon == second.Metrics.HeadersWon &&
                first.Metrics.AerialSecondBalls == second.Metrics.AerialSecondBalls &&
+               first.Analytics.PossessionChanges == second.Analytics.PossessionChanges &&
+               first.Analytics.Corners == second.Analytics.Corners &&
+               first.Analytics.GoalKicks == second.Analytics.GoalKicks &&
+               first.Analytics.ThrowIns == second.Analytics.ThrowIns &&
+               first.Analytics.Goals.Count == second.Analytics.Goals.Count &&
                first.Metrics.ResolvedActions == second.Metrics.ResolvedActions;
     }
 

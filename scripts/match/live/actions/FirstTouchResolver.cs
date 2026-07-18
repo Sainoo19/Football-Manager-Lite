@@ -21,6 +21,13 @@ public readonly struct FirstTouchResolution
 
 public sealed class FirstTouchResolver
 {
+    private readonly float _controlChanceBonus;
+
+    public FirstTouchResolver(float controlChanceBonus = 0f)
+    {
+        _controlChanceBonus = controlChanceBonus;
+    }
+
     public FirstTouchResolution Resolve(
         int firstTouch,
         int technique,
@@ -47,7 +54,10 @@ public sealed class FirstTouchResolver
             LivePassType.ThroughBall => 0.05f,
             _ => 0f
         };
-        float controlChance = Mathf.Clamp(0.48f + skill / 190f - pressurePenalty - speedPenalty - typePenalty, 0.20f, 0.94f);
+        float controlChance = Mathf.Clamp(
+            0.48f + skill / 190f + _controlChanceBonus - pressurePenalty - speedPenalty - typePenalty,
+            0.20f,
+            0.97f);
         if (controlRoll <= controlChance)
         {
             return new FirstTouchResolution(FirstTouchOutcome.Controlled, 0f);

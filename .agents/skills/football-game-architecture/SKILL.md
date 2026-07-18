@@ -20,9 +20,34 @@ scripts/
   match/fast/      # Non-visual instant simulation
   match/live/      # Real-time pitch simulation and rules
   ui/              # Godot Controls, view controllers, and rendering
+
+tests/             # All test code and test-only assets; never place tests under scripts/
+  unit/            # Isolated pure C# behavior tests
+  integration/     # Cross-component and Godot integration tests
+  support/         # Shared fixtures, builders, fakes, and test utilities
+
+.artifacts/
+  test-reports/    # Generated reports, logs, CSV/JSON exports, and batch-run output
 ```
 
-Put tests under `tests/unit`, `tests/integration`, or `tests/support` when the suite grows.
+Keep `tests/` as a distinct test boundary, equivalent to a separate .NET test tree. Put every test source,
+test runner, test scene, fixture, fake, and test-only helper somewhere under `tests/`; never colocate tests
+with production files under `scripts/`. If the project later adopts xUnit or another .NET test project, place
+each test project under `tests/<ProjectName>.Tests/`, not at the repository root.
+
+## Generated test artifacts
+
+- Write all generated test and simulation reports under
+  `.artifacts/test-reports/<suite-or-tool>/<run-id>/`.
+- Keep `/.artifacts/test-reports/` in `.gitignore`. Generated Markdown, CSV, JSON, JSONL, logs, screenshots,
+  snapshots, and batch outputs must not appear as untracked Git changes.
+- Do not write generated reports into `scripts/`, `tests/`, `tools/`, `docs/`, or a tracked `reports/` tree.
+- Keep test inputs separate from test outputs. Small deterministic fixtures that tests require may be committed
+  under `tests/support` or `tests/fixtures`; generated execution output belongs only in `.artifacts/test-reports/`.
+- Give report-producing tools a default output path inside `.artifacts/test-reports/`, while still allowing an
+  explicit output override when useful.
+- Before finishing report or batch-run work, use `git check-ignore` to verify a representative generated file
+  is ignored and `git status` to verify no generated report data is pending.
 
 ## Dependency direction
 
@@ -102,6 +127,11 @@ Apply these rules to all new or edited code. Do not copy a legacy style merely b
 
 ### Testing standard
 
+- Keep production and test dependencies one-way: tests may reference production code; production code must never
+  reference test runners, fixtures, helpers, or test projects.
+- Put unit tests in `tests/unit`, integration and Godot tests in `tests/integration`, and reusable test-only code
+  in `tests/support`. Keep any runner bootstrap under `tests/`.
+- Name test files after the behavior or production type they cover and suffix test classes/files with `Tests`.
 - Make tests deterministic and independent. Use fixed seeds and do not depend on test execution order.
 - Name tests by behavior and expected result, not by private method name.
 - Cover the normal case, important boundary, and rejected/invalid case for each football rule.

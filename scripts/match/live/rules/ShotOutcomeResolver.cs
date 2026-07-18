@@ -11,6 +11,17 @@ public enum ShotOutcome
 
 public sealed class ShotOutcomeResolver
 {
+    private readonly float _goalProbabilityMultiplier;
+    private readonly float _parriedShotCornerProbability;
+
+    public ShotOutcomeResolver(
+        float goalProbabilityMultiplier = 1f,
+        float parriedShotCornerProbability = 0.24f)
+    {
+        _goalProbabilityMultiplier = goalProbabilityMultiplier;
+        _parriedShotCornerProbability = parriedShotCornerProbability;
+    }
+
     public ShotOutcome Resolve(
         int finishing,
         int shooterPositioning,
@@ -57,6 +68,7 @@ public sealed class ShotOutcomeResolver
         {
             goalChance -= 0.06f;
         }
+        goalChance *= _goalProbabilityMultiplier;
         float maximumGoalChance = Mathf.Lerp(0.78f, 0.52f, goalkeeperCoverage);
         if (goalRoll < Mathf.Clamp(goalChance, 0.015f, maximumGoalChance))
         {
@@ -71,6 +83,8 @@ public sealed class ShotOutcomeResolver
             return ShotOutcome.Saved;
         }
 
-        return cornerRoll < 0.24f ? ShotOutcome.ParriedCorner : ShotOutcome.Parried;
+        return cornerRoll < _parriedShotCornerProbability
+            ? ShotOutcome.ParriedCorner
+            : ShotOutcome.Parried;
     }
 }

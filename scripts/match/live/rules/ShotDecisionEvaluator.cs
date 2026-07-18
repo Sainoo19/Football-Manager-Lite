@@ -3,6 +3,12 @@ using Godot;
 public sealed class ShotDecisionEvaluator
 {
     public const float MaximumShootingDistanceMeters = 33f;
+    private readonly float _attemptProbabilityMultiplier;
+
+    public ShotDecisionEvaluator(float attemptProbabilityMultiplier = 1f)
+    {
+        _attemptProbabilityMultiplier = attemptProbabilityMultiplier;
+    }
 
     public bool ShouldShoot(
         string role,
@@ -44,6 +50,6 @@ public sealed class ShotDecisionEvaluator
             chance += 0.14f;
         }
 
-        return decisionRoll < Mathf.Clamp(chance, 0.01f, 0.68f);
+        return decisionRoll < Mathf.Clamp(chance * _attemptProbabilityMultiplier, 0.005f, 0.68f);
     }
 }

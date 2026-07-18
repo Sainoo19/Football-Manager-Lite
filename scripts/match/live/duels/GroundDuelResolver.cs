@@ -89,6 +89,13 @@ public readonly struct GroundDuelResolution
 
 public sealed class GroundDuelResolver
 {
+    private readonly float _foulProbabilityMultiplier;
+
+    public GroundDuelResolver(float foulProbabilityMultiplier = 1f)
+    {
+        _foulProbabilityMultiplier = foulProbabilityMultiplier;
+    }
+
     public GroundDuelResolution Resolve(GroundDuelContext context)
     {
         if (context.EngagementType is not (
@@ -102,6 +109,7 @@ public sealed class GroundDuelResolver
         foulChance += context.IsChallengeFromBehind ? 0.20f : 0f;
         foulChance += overreach * 0.06f;
         foulChance += Mathf.Clamp((context.TimingRoll - 0.62f) * 0.42f, 0f, 0.16f);
+        foulChance *= _foulProbabilityMultiplier;
         if (context.FoulRoll < foulChance)
         {
             return new GroundDuelResolution(GroundDuelOutcome.Foul, 0f);
