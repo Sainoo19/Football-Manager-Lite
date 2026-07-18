@@ -4,6 +4,7 @@ public enum LivePassType
 {
     Standard,
     ThroughBall,
+    Lofted,
     Cross
 }
 
@@ -34,12 +35,14 @@ public sealed class PassTrajectoryPlanner
         float ballSpeed = passType switch
         {
             LivePassType.ThroughBall => 19.5f,
+            LivePassType.Lofted => 19f,
             LivePassType.Cross => 24f,
             _ => 18f
         };
         float maximumLeadMeters = passType switch
         {
             LivePassType.ThroughBall => 8f,
+            LivePassType.Lofted => 2.8f,
             LivePassType.Cross => 4.2f,
             _ => 1.2f
         };
@@ -48,7 +51,12 @@ public sealed class PassTrajectoryPlanner
         Vector2 receiverMeters = FootballPitchDimensions.ToMeters(receiverPosition);
         Vector2 runTargetMeters = FootballPitchDimensions.ToMeters(receiverRunTarget);
         float directFlightDuration = Mathf.Clamp(ballMeters.DistanceTo(receiverMeters) / ballSpeed, 0.32f, 1.35f);
-        float anticipationFactor = passType == LivePassType.ThroughBall ? 0.86f : 0.72f;
+        float anticipationFactor = passType switch
+        {
+            LivePassType.ThroughBall => 0.86f,
+            LivePassType.Lofted => 0.78f,
+            _ => 0.72f
+        };
         float reachableLeadMeters = ReceiverRunSpeedMetersPerSecond * directFlightDuration * anticipationFactor;
         float leadMeters = Mathf.Min(maximumLeadMeters, reachableLeadMeters);
         Vector2 targetMeters = receiverMeters.MoveToward(runTargetMeters, leadMeters);
@@ -60,6 +68,7 @@ public sealed class PassTrajectoryPlanner
         float visualLift = passType switch
         {
             LivePassType.ThroughBall => 0.028f,
+            LivePassType.Lofted => 0.052f,
             LivePassType.Cross => 0.060f,
             _ => 0.014f
         };

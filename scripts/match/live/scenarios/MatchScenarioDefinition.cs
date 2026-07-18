@@ -5,7 +5,13 @@ public enum MatchScenarioKind
 {
     ThroughBallBreakaway,
     TwoAttackersVersusOneDefender,
-    ThreeAttackersVersusTwoDefenders
+    ThreeAttackersVersusTwoDefenders,
+    CentralOneVersusOne,
+    WideOneVersusOne,
+    StrikerBackToGoalOneVersusOne,
+    LoftedPassAerialDuel,
+    AerialCrossIntoBox,
+    AerialClearanceUnderPressure
 }
 
 public sealed class MatchScenarioDefinition

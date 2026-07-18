@@ -1,7 +1,7 @@
 using System.Linq;
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private void CompleteLiveShot()
     {
@@ -14,7 +14,7 @@ public partial class MatchPitch2D
             _pendingShotGoalkeeperId,
             _pendingShotBlockerId);
         if (matchEvent is not null)
-            EmitSignal(SignalName.LiveMatchEvent, matchEvent);
+            LiveMatchEvent?.Invoke(matchEvent);
 
         string outcome = _pendingShotOutcome.ToString();
         string resultText = outcome switch
@@ -55,16 +55,16 @@ public partial class MatchPitch2D
         if (Simulation is null || playerId == new StringName() || !CurrentPositions.ContainsKey(playerId))
             return;
         ResetCarrySequence();
-        _isBallVisible = true;
-        _ballOwnerId = playerId;
+        _state.IsBallVisible = true;
+        _state.BallOwnerId = playerId;
         _runtime.SetPhase(LiveMatchPhase.InPossession);
-        _looseBallVelocityMetersPerSecond = Vector2.Zero;
-        _activeTeamId = _playerTeams[playerId];
-        Simulation.set_live_possession(_activeTeamId);
-        _attackProgress = Mathf.Clamp(AttackProgress(_activeTeamId, CurrentPositions[playerId]), 0.10f, 0.72f);
+        _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
+        _state.ActiveTeamId = _playerTeams[playerId];
+        Simulation.set_live_possession(_state.ActiveTeamId);
+        _attackProgress = Mathf.Clamp(AttackProgress(_state.ActiveTeamId, CurrentPositions[playerId]), 0.10f, 0.72f);
         _phaseLane = CurrentPositions[playerId].Y;
         SelectPhasePlayers();
-        _nextDecisionTime = _visualTime + decisionDelay;
+        _nextDecisionTime = _state.VisualTime + decisionDelay;
     }
 
     private void ScheduleRestart(
@@ -80,31 +80,31 @@ public partial class MatchPitch2D
         ClearDirectAttack();
         if (restartType == "kickoff")
             ResetPlayersForKickoff(teamId);
-        _ballOwnerId = new StringName();
-        _looseBallActive = false;
-        _looseBallVelocityMetersPerSecond = Vector2.Zero;
-        _restartPending = true;
+        _state.BallOwnerId = new StringName();
+        _state.IsLooseBallActive = false;
+        _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
+        _state.IsRestartPending = true;
         _runtime.SetPhase(LiveMatchPhase.Restart);
-        _restartType = restartType;
-        _restartTeamId = teamId;
-        _activeTeamId = teamId;
+        _state.RestartType = restartType;
+        _state.RestartTeamId = teamId;
+        _state.ActiveTeamId = teamId;
         Simulation.set_live_possession(teamId);
-        _restartPosition = ClampToPitch(position);
-        _restartScheduledTime = _visualTime;
-        _restartTakerId = new StringName();
+        _state.RestartPosition = ClampToPitch(position);
+        _state.RestartScheduledTime = _state.VisualTime;
+        _state.RestartTakerId = new StringName();
         bool waitsForBallPresentation = restartType == "goal_kick" ||
                                         restartType == "free_kick" ||
                                         restartType == "penalty";
-        _restartBallPlaced = !waitsForBallPresentation;
-        _isBallVisible = true;
+        _state.IsRestartBallPlaced = !waitsForBallPresentation;
+        _state.IsBallVisible = true;
         if (restartType == "free_kick")
         {
-            _restartTakerId = ChooseNearestPlayer(teamId, _restartPosition, false);
+            _state.RestartTakerId = ChooseNearestPlayer(teamId, _state.RestartPosition, false);
             _freeKickRestartPlan = _freeKickRestartPlanner.CreatePlan(
                 BallPosition,
-                _restartPosition,
+                _state.RestartPosition,
                 allowsQuickRestart,
-                VarietyRoll(teamId, _restartTakerId, _decisionSerial + Restarts * 617 + 29));
+                VarietyRoll(teamId, _state.RestartTakerId, _decisionSerial + Restarts * 617 + 29));
         }
         else if (restartType == "penalty")
         {
@@ -112,8 +112,8 @@ public partial class MatchPitch2D
                 ? Simulation.away.team.id
                 : Simulation.home.team.id;
             _penaltyRestartPlan = _penaltyRestartPlanner.CreatePlan(BallPosition, OwnGoalX(defendingTeamId));
-            _restartPosition = _penaltyRestartPlan.PenaltySpot;
-            _restartTakerId = ChoosePenaltyTaker(teamId);
+            _state.RestartPosition = _penaltyRestartPlan.PenaltySpot;
+            _state.RestartTakerId = ChoosePenaltyTaker(teamId);
         }
         else
         {
@@ -122,7 +122,7 @@ public partial class MatchPitch2D
         }
         if (!waitsForBallPresentation)
         {
-            BallPosition = _restartPosition;
+            BallPosition = _state.RestartPosition;
         }
         float preparationDuration = restartType.ToString() switch
         {
@@ -131,99 +131,99 @@ public partial class MatchPitch2D
             "penalty" => PenaltyRestartPlanner.PreparationDurationSeconds,
             _ => 0.46f
         };
-        _restartExecuteTime = _visualTime + preparationDuration;
+        _state.RestartExecuteTime = _state.VisualTime + preparationDuration;
         FootballMatchEvent? restartEvent = Simulation.register_live_restart(teamId, restartType);
         if (restartEvent is not null)
-            EmitSignal(SignalName.LiveMatchEvent, restartEvent);
+            LiveMatchEvent?.Invoke(restartEvent);
     }
 
     private void UpdateRestartBallPresentation()
     {
-        if (!_restartPending || _restartBallPlaced)
+        if (!_state.IsRestartPending || _state.IsRestartBallPlaced)
         {
             return;
         }
 
-        if (_restartType == "free_kick")
+        if (_state.RestartType == "free_kick")
         {
             UpdateFreeKickBallPresentation();
             return;
         }
-        if (_restartType == "penalty")
+        if (_state.RestartType == "penalty")
         {
             UpdatePenaltyBallPresentation();
             return;
         }
-        if (_restartType != "goal_kick")
+        if (_state.RestartType != "goal_kick")
         {
             return;
         }
 
         GoalKickBallPresentation presentation = _goalKickRestartPlanner.BallPresentation(
-            _visualTime - _restartScheduledTime);
+            _state.VisualTime - _state.RestartScheduledTime);
         if (presentation == GoalKickBallPresentation.OutOfPlayVisible)
         {
-            _isBallVisible = true;
+            _state.IsBallVisible = true;
             return;
         }
         if (presentation == GoalKickBallPresentation.BeingRetrieved)
         {
-            _isBallVisible = false;
+            _state.IsBallVisible = false;
             return;
         }
 
-        _restartBallPlaced = true;
-        _isBallVisible = true;
-        BallPosition = _restartPosition;
-        StringName goalkeeperId = ChooseGoalkeeper(_restartTeamId);
+        _state.IsRestartBallPlaced = true;
+        _state.IsBallVisible = true;
+        BallPosition = _state.RestartPosition;
+        StringName goalkeeperId = ChooseGoalkeeper(_state.RestartTeamId);
         SetAction($"{PlayerName(goalkeeperId)} nhận bóng mới và đặt xuống chuẩn bị phát bóng");
     }
 
     private void UpdateFreeKickBallPresentation()
     {
-        float elapsedSeconds = _visualTime - _restartScheduledTime;
+        float elapsedSeconds = _state.VisualTime - _state.RestartScheduledTime;
         BallPosition = _freeKickRestartPlan.BallPositionAt(elapsedSeconds);
-        _isBallVisible = true;
+        _state.IsBallVisible = true;
         if (!_freeKickRestartPlan.IsBallPlaced(elapsedSeconds))
         {
             return;
         }
 
-        _restartBallPlaced = true;
-        BallPosition = _restartPosition;
+        _state.IsRestartBallPlaced = true;
+        BallPosition = _state.RestartPosition;
         SetAction(_freeKickRestartPlan.IsQuick
-            ? $"{PlayerName(_restartTakerId)} đã đặt bóng và chuẩn bị đá phạt nhanh"
-            : $"{PlayerName(_restartTakerId)} đặt bóng đúng vị trí, chờ hiệu lệnh thực hiện");
+            ? $"{PlayerName(_state.RestartTakerId)} đã đặt bóng và chuẩn bị đá phạt nhanh"
+            : $"{PlayerName(_state.RestartTakerId)} đặt bóng đúng vị trí, chờ hiệu lệnh thực hiện");
     }
 
     private void UpdatePenaltyBallPresentation()
     {
-        float elapsedSeconds = _visualTime - _restartScheduledTime;
+        float elapsedSeconds = _state.VisualTime - _state.RestartScheduledTime;
         BallPosition = _penaltyRestartPlan.BallPositionAt(elapsedSeconds);
-        _isBallVisible = true;
+        _state.IsBallVisible = true;
         if (!_penaltyRestartPlan.IsBallPlaced(elapsedSeconds))
         {
             return;
         }
 
-        _restartBallPlaced = true;
-        BallPosition = _restartPosition;
-        SetAction($"{PlayerName(_restartTakerId)} đặt bóng lên chấm phạt đền, hai đội chờ hiệu lệnh");
+        _state.IsRestartBallPlaced = true;
+        BallPosition = _state.RestartPosition;
+        SetAction($"{PlayerName(_state.RestartTakerId)} đặt bóng lên chấm phạt đền, hai đội chờ hiệu lệnh");
     }
 
     private void ExecuteRestart()
     {
         if (Simulation is null)
             return;
-        _restartPending = false;
-        _restartBallPlaced = true;
-        _isBallVisible = true;
+        _state.IsRestartPending = false;
+        _state.IsRestartBallPlaced = true;
+        _state.IsBallVisible = true;
         Restarts++;
-        _activeTeamId = _restartTeamId;
-        Simulation.set_live_possession(_activeTeamId);
+        _state.ActiveTeamId = _state.RestartTeamId;
+        Simulation.set_live_possession(_state.ActiveTeamId);
         SyncLineups(false);
 
-        string type = _restartType.ToString();
+        string type = _state.RestartType.ToString();
         if (type == "goal_kick")
         {
             ExecuteGoalKick();
@@ -245,21 +245,21 @@ public partial class MatchPitch2D
         if (type == "corner")
         {
             _attackProgress = 0.91f;
-            _phaseLane = _restartPosition.Y;
+            _phaseLane = _state.RestartPosition.Y;
             SelectPhasePlayers();
-            StringName taker = ChooseNearestPlayer(_restartTeamId, _restartPosition, true);
-            _ballOwnerId = taker;
-            BallPosition = _restartPosition;
-            StringName receiver = _primaryRunnerId != new StringName() ? _primaryRunnerId : ChooseOwner(_restartTeamId, true);
-            float attackingGoalX = AttackingGoalX(_restartTeamId);
+            StringName taker = ChooseNearestPlayer(_state.RestartTeamId, _state.RestartPosition, true);
+            _state.BallOwnerId = taker;
+            BallPosition = _state.RestartPosition;
+            StringName receiver = _primaryRunnerId != new StringName() ? _primaryRunnerId : ChooseOwner(_state.RestartTeamId, true);
+            float attackingGoalX = AttackingGoalX(_state.RestartTeamId);
             float crossTargetX = attackingGoalX < 0.5f ? 0.13f : 0.87f;
             StartBallAction(new Vector2(crossTargetX, 0.5f), 0.68f, 0.06f, receiver, BallActionKind.Cross);
             SetAction($"{PlayerName(taker)} thực hiện phạt góc");
             return;
         }
 
-        StringName ownerId = ChooseNearestPlayer(_restartTeamId, _restartPosition, false);
-        BallPosition = _restartPosition;
+        StringName ownerId = ChooseNearestPlayer(_state.RestartTeamId, _state.RestartPosition, false);
+        BallPosition = _state.RestartPosition;
         GivePossessionTo(ownerId, 0.38f);
         _attackProgress = type == "kickoff" ? 0.20f : _attackProgress;
         SetAction(type switch
@@ -271,17 +271,17 @@ public partial class MatchPitch2D
 
     private void ApplyGoalKickRestartTargets()
     {
-        float kickingGoalX = OwnGoalX(_restartTeamId);
+        float kickingGoalX = OwnGoalX(_state.RestartTeamId);
         _playerIntents.Clear();
         foreach (StringName playerId in CurrentPositions.Keys)
         {
-            bool isKickingTeam = _playerTeams[playerId] == _restartTeamId;
+            bool isKickingTeam = _playerTeams[playerId] == _state.RestartTeamId;
             Vector2 target = _goalKickRestartPlanner.PositionTarget(
                 BasePositions[playerId],
                 _playerRoles[playerId],
                 isKickingTeam,
                 kickingGoalX,
-                _restartPosition);
+                _state.RestartPosition);
             TargetPositions[playerId] = target;
             _playerIntents[playerId] = new PlayerIntent(
                 PlayerIntentKind.RepositionForRestart,
@@ -300,17 +300,17 @@ public partial class MatchPitch2D
         _playerIntents.Clear();
         foreach (StringName playerId in CurrentPositions.Keys)
         {
-            bool isRestartingTeam = _playerTeams[playerId] == _restartTeamId;
+            bool isRestartingTeam = _playerTeams[playerId] == _state.RestartTeamId;
             Vector2 target = CurrentPositions[playerId];
-            if (playerId == _restartTakerId)
+            if (playerId == _state.RestartTakerId)
             {
-                target = _restartPosition;
+                target = _state.RestartPosition;
             }
             else if (!isRestartingTeam)
             {
                 target = _freeKickRestartPlanner.EnsureRequiredDefenderDistance(
                     target,
-                    _restartPosition,
+                    _state.RestartPosition,
                     _freeKickRestartPlan.IsQuick);
             }
 
@@ -329,7 +329,7 @@ public partial class MatchPitch2D
             return;
         }
 
-        StringName defendingTeamId = _restartTeamId == Simulation.home.team.id
+        StringName defendingTeamId = _state.RestartTeamId == Simulation.home.team.id
             ? Simulation.away.team.id
             : Simulation.home.team.id;
         StringName goalkeeperId = ChooseGoalkeeper(defendingTeamId);
@@ -338,9 +338,9 @@ public partial class MatchPitch2D
         foreach (StringName playerId in CurrentPositions.Keys)
         {
             Vector2 target;
-            if (playerId == _restartTakerId)
+            if (playerId == _state.RestartTakerId)
             {
-                target = _penaltyRestartPlanner.PositionTaker(_restartPosition, defendingGoalX);
+                target = _penaltyRestartPlanner.PositionTaker(_state.RestartPosition, defendingGoalX);
             }
             else if (playerId == goalkeeperId)
             {
@@ -350,7 +350,7 @@ public partial class MatchPitch2D
             {
                 target = _penaltyRestartPlanner.EnsureOutsidePenaltyAreaAndArc(
                     CurrentPositions[playerId],
-                    _restartPosition,
+                    _state.RestartPosition,
                     defendingGoalX);
             }
 
@@ -358,7 +358,7 @@ public partial class MatchPitch2D
             _playerIntents[playerId] = new PlayerIntent(
                 PlayerIntentKind.RepositionForRestart,
                 target,
-                _playerTeams[playerId] == _restartTeamId
+                _playerTeams[playerId] == _state.RestartTeamId
                     ? LiveTeamPhase.InPossession
                     : LiveTeamPhase.Defending);
         }
@@ -371,19 +371,19 @@ public partial class MatchPitch2D
             return;
         }
 
-        StringName defendingTeamId = _restartTeamId == Simulation.home.team.id
+        StringName defendingTeamId = _state.RestartTeamId == Simulation.home.team.id
             ? Simulation.away.team.id
             : Simulation.home.team.id;
         StringName goalkeeperId = ChooseGoalkeeper(defendingTeamId);
-        StringName takerId = _restartTakerId != new StringName() && CurrentPositions.ContainsKey(_restartTakerId)
-            ? _restartTakerId
-            : ChoosePenaltyTaker(_restartTeamId);
-        float goalX = AttackingGoalX(_restartTeamId);
-        float attackDirection = AttackDirection(_restartTeamId);
-        CurrentPositions[takerId] = _penaltyRestartPlanner.PositionTaker(_restartPosition, goalX);
+        StringName takerId = _state.RestartTakerId != new StringName() && CurrentPositions.ContainsKey(_state.RestartTakerId)
+            ? _state.RestartTakerId
+            : ChoosePenaltyTaker(_state.RestartTeamId);
+        float goalX = AttackingGoalX(_state.RestartTeamId);
+        float attackDirection = AttackDirection(_state.RestartTeamId);
+        CurrentPositions[takerId] = _penaltyRestartPlanner.PositionTaker(_state.RestartPosition, goalX);
         CurrentPositions[goalkeeperId] = _penaltyRestartPlanner.PositionGoalkeeper(goalX);
-        BallPosition = _restartPosition;
-        _ballOwnerId = takerId;
+        BallPosition = _state.RestartPosition;
+        _state.BallOwnerId = takerId;
         FootballPlayer? taker = GetPlayer(takerId);
         FootballPlayer? goalkeeper = GetPlayer(goalkeeperId);
         PenaltyKickOutcome outcome = _penaltyKickResolver.Resolve(
@@ -442,13 +442,13 @@ public partial class MatchPitch2D
 
     private void ApplyPendingCardsAtStoppage()
     {
-        if (Simulation is null || _pendingCardActions.Count == 0)
+        if (Simulation is null || _state.PendingCardActions.Count == 0)
         {
             return;
         }
 
         bool lineupChanged = false;
-        foreach (PendingCardAction pendingCard in _pendingCardActions)
+        foreach (PendingCardAction pendingCard in _state.PendingCardActions)
         {
             FootballMatchEvent? cardEvent = Simulation.RegisterLiveDelayedCard(
                 pendingCard.TeamId,
@@ -456,11 +456,11 @@ public partial class MatchPitch2D
                 pendingCard.Card);
             if (cardEvent is not null)
             {
-                EmitSignal(SignalName.LiveMatchEvent, cardEvent);
+                LiveMatchEvent?.Invoke(cardEvent);
             }
             lineupChanged |= Simulation.get_state(pendingCard.TeamId)?.IsSentOff(pendingCard.OffenderId) == true;
         }
-        _pendingCardActions.Clear();
+        _state.PendingCardActions.Clear();
         if (lineupChanged)
         {
             SyncLineups(false);
@@ -474,22 +474,22 @@ public partial class MatchPitch2D
             return;
         }
 
-        StringName takerId = _restartTakerId != new StringName() && CurrentPositions.ContainsKey(_restartTakerId)
-            ? _restartTakerId
-            : ChooseNearestPlayer(_restartTeamId, _restartPosition, false);
-        BallPosition = _restartPosition;
-        CurrentPositions[takerId] = _restartPosition;
-        _ballOwnerId = takerId;
-        _activeTeamId = _restartTeamId;
-        Simulation.set_live_possession(_activeTeamId);
-        _attackProgress = AttackProgress(_activeTeamId, _restartPosition);
-        _phaseLane = _restartPosition.Y;
+        StringName takerId = _state.RestartTakerId != new StringName() && CurrentPositions.ContainsKey(_state.RestartTakerId)
+            ? _state.RestartTakerId
+            : ChooseNearestPlayer(_state.RestartTeamId, _state.RestartPosition, false);
+        BallPosition = _state.RestartPosition;
+        CurrentPositions[takerId] = _state.RestartPosition;
+        _state.BallOwnerId = takerId;
+        _state.ActiveTeamId = _state.RestartTeamId;
+        Simulation.set_live_possession(_state.ActiveTeamId);
+        _attackProgress = AttackProgress(_state.ActiveTeamId, _state.RestartPosition);
+        _phaseLane = _state.RestartPosition.Y;
         SelectPhasePlayers();
 
         StringName receiverId = ChoosePassTarget(true);
         if (receiverId == new StringName())
         {
-            receiverId = ChooseOwner(_restartTeamId, false);
+            receiverId = ChooseOwner(_state.RestartTeamId, false);
         }
         if (receiverId == new StringName() || receiverId == takerId)
         {
@@ -512,10 +512,10 @@ public partial class MatchPitch2D
             return;
         }
 
-        float kickingGoalX = OwnGoalX(_restartTeamId);
+        float kickingGoalX = OwnGoalX(_state.RestartTeamId);
         foreach (StringName playerId in CurrentPositions.Keys.ToList())
         {
-            if (_playerTeams[playerId] != _restartTeamId)
+            if (_playerTeams[playerId] != _state.RestartTeamId)
             {
                 CurrentPositions[playerId] = _goalKickRestartPlanner.EnsureOpponentOutsidePenaltyArea(
                     CurrentPositions[playerId],
@@ -523,17 +523,17 @@ public partial class MatchPitch2D
             }
         }
 
-        StringName goalkeeperId = ChooseGoalkeeper(_restartTeamId);
-        CurrentPositions[goalkeeperId] = _restartPosition;
-        BallPosition = _restartPosition;
-        _ballOwnerId = goalkeeperId;
+        StringName goalkeeperId = ChooseGoalkeeper(_state.RestartTeamId);
+        CurrentPositions[goalkeeperId] = _state.RestartPosition;
+        BallPosition = _state.RestartPosition;
+        _state.BallOwnerId = goalkeeperId;
         _attackProgress = 0.08f;
         _phaseLane = 0.5f;
         SelectPhasePlayers();
 
         StringName shortTarget = ChooseGoalkeeperDistributionTarget(goalkeeperId);
         bool playsShort = shortTarget != new StringName() &&
-                          VarietyRoll(goalkeeperId, _restartTeamId, _decisionSerial + Restarts * 401) < 0.62f;
+                          VarietyRoll(goalkeeperId, _state.RestartTeamId, _decisionSerial + Restarts * 401) < 0.62f;
         if (playsShort)
         {
             StartPass(shortTarget, BallActionKind.Pass);
@@ -550,8 +550,8 @@ public partial class MatchPitch2D
         if (!_kickoffPassPending ||
             _kickoffReceiverId == new StringName() ||
             !CurrentPositions.ContainsKey(_kickoffReceiverId) ||
-            _playerTeams[ownerId] != _activeTeamId ||
-            _playerTeams[_kickoffReceiverId] != _activeTeamId)
+            _playerTeams[ownerId] != _state.ActiveTeamId ||
+            _playerTeams[_kickoffReceiverId] != _state.ActiveTeamId)
         {
             return false;
         }
@@ -591,17 +591,21 @@ public partial class MatchPitch2D
         SyncLineups(true);
         _movementController.Reset();
         _ballActionActive = false;
+        _aerialFlightActive = false;
+        _aerialTrajectory = default;
+        _aerialContenderIds.Clear();
         _ballActionKind = BallActionKind.None;
         _pendingOffsideReceiverId = new StringName();
         _ballVisualHeight = 0f;
+        _ballVerticalVelocityMetersPerSecond = 0f;
         _ballNextOwnerId = new StringName();
         _actionSourceId = new StringName();
         _actionSourceTeamId = new StringName();
-        _looseBallActive = false;
-        _looseBallVelocityMetersPerSecond = Vector2.Zero;
+        _state.IsLooseBallActive = false;
+        _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
         ResetCarrySequence();
-        _isBallVisible = true;
-        _restartBallPlaced = true;
+        _state.IsBallVisible = true;
+        _state.IsRestartBallPlaced = true;
         BallPosition = new Vector2(0.5f, 0.5f);
 
         foreach (StringName playerId in CurrentPositions.Keys.ToList())
@@ -630,8 +634,8 @@ public partial class MatchPitch2D
             TargetPositions[setup.ReceiverId] = setup.ReceiverPosition;
         }
 
-        _activeTeamId = kickingTeamId;
-        _ballOwnerId = setup.TakerId;
+        _state.ActiveTeamId = kickingTeamId;
+        _state.BallOwnerId = setup.TakerId;
         _kickoffReceiverId = setup.ReceiverId;
         _kickoffPassPending = setup.IsValid;
         Simulation.set_live_possession(kickingTeamId);

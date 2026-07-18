@@ -1,7 +1,7 @@
 using System.Linq;
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private bool ShouldShoot(StringName shooterId, float pressureDistanceMeters)
     {
@@ -23,7 +23,10 @@ public partial class MatchPitch2D
             DecisionRoll(shooterId, _pressingPlayerId, _decisionSerial + 73));
     }
 
-    private void StartLiveShot(StringName shooterId, float pressureDistanceMeters)
+    private void StartLiveShot(
+        StringName shooterId,
+        float pressureDistanceMeters,
+        bool isHeader = false)
     {
         if (Simulation is null)
         {
@@ -91,8 +94,12 @@ public partial class MatchPitch2D
                 goalTarget,
                 goalkeeperPosition);
             float accuracyRoll = DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 151);
+            int finishingRating = isHeader
+                ? Mathf.RoundToInt((shooter?.Heading ?? 50) * 0.68f +
+                                   (shooter?.finishing ?? 50) * 0.32f)
+                : shooter?.finishing ?? 50;
             ShotOutcome resolution = _shotOutcomeResolver.Resolve(
-                shooter?.finishing ?? 50,
+                finishingRating,
                 shooter?.positioning ?? 50,
                 shooter?.form ?? 50,
                 goalkeeper?.goalkeeping ?? 55,
@@ -143,6 +150,8 @@ public partial class MatchPitch2D
             0.012f,
             nextOwner,
             BallActionKind.Shot);
-        SetAction($"{PlayerName(shooterId)} tung cú sút");
+        SetAction(isHeader
+            ? $"{PlayerName(shooterId)} bật cao đánh đầu dứt điểm"
+            : $"{PlayerName(shooterId)} tung cú sút");
     }
 }

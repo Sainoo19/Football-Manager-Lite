@@ -2,19 +2,19 @@ using System.Collections.Generic;
 using System.Linq;
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private void DecideNextAction()
     {
-        if (Simulation is null || Simulation.is_finished || _ballOwnerId == new StringName() || !CurrentPositions.ContainsKey(_ballOwnerId))
+        if (Simulation is null || Simulation.is_finished || _state.BallOwnerId == new StringName() || !CurrentPositions.ContainsKey(_state.BallOwnerId))
             return;
         _decisionSerial++;
         _decisionsSinceShot++;
-        StringName ownerId = _ballOwnerId;
-        if (_playerTeams[ownerId] != _activeTeamId)
+        StringName ownerId = _state.BallOwnerId;
+        if (_playerTeams[ownerId] != _state.ActiveTeamId)
         {
-            _activeTeamId = _playerTeams[ownerId];
-            Simulation.set_live_possession(_activeTeamId);
+            _state.ActiveTeamId = _playerTeams[ownerId];
+            Simulation.set_live_possession(_state.ActiveTeamId);
             SelectPhasePlayers();
         }
 
@@ -27,8 +27,7 @@ public partial class MatchPitch2D
         float pressureDistanceMeters = nearestOpponent != new StringName()
             ? FootballPitchDimensions.DistanceMeters(CurrentPositions[ownerId], CurrentPositions[nearestOpponent])
             : float.PositiveInfinity;
-        if (_duelDistanceRules.CanAttemptTackle(pressureDistanceMeters) &&
-            TryResolveTackle(ownerId, nearestOpponent, pressureDistanceMeters))
+        if (TryAdvanceGroundDuel(ownerId, nearestOpponent, pressureDistanceMeters))
             return;
 
         if (TryContinueDirectAttack(ownerId, pressureDistanceMeters))
@@ -183,59 +182,7 @@ public partial class MatchPitch2D
 
     private void StartDribble(StringName ownerId, bool escapingPressure)
     {
-        if (_carryOwnerId == ownerId)
-        {
-            _consecutiveCarries++;
-        }
-        else
-        {
-            _carryOwnerId = ownerId;
-            _consecutiveCarries = 1;
-        }
-        FootballPlayer? player = GetPlayer(ownerId);
-        float quality = ((player?.dribbling ?? 50) + (player?.pace ?? 50)) / 198f;
-        _attackProgress = Mathf.Clamp(_attackProgress + Mathf.Lerp(0.035f, 0.075f, quality), 0.12f, 0.94f);
-        _phaseLane = Mathf.Lerp(_phaseLane, CurrentPositions[ownerId].Y, 0.55f);
-        Dribbles++;
-        _nextDecisionTime = _visualTime + (escapingPressure ? 0.62f : 0.82f);
-        SetAction(escapingPressure
-            ? $"{PlayerName(ownerId)} thoát pressing"
-            : $"{PlayerName(ownerId)} dẫn bóng lên phía trước");
-    }
-
-    private bool TryResolveTackle(StringName ownerId, StringName defenderId, float distanceMeters)
-    {
-        FootballPlayer? owner = GetPlayer(ownerId);
-        FootballPlayer? defender = GetPlayer(defenderId);
-        float tackleSkill = ((defender?.tackling ?? 50) + (defender?.positioning ?? 50)) * 0.5f;
-        float controlSkill = ((owner?.dribbling ?? 50) + (owner?.pace ?? 50)) * 0.5f;
-        float contactBonus = _duelDistanceRules.ContactBonus(distanceMeters) * 0.28f;
-        float chance = Mathf.Clamp(0.22f + (tackleSkill - controlSkill) / 145f + contactBonus, 0.08f, 0.72f);
-        float tackleRoll = DecisionRoll(ownerId, defenderId, _decisionSerial + 41);
-        if (tackleRoll >= chance)
-        {
-            float foulChance = Mathf.Clamp(
-                0.10f + (controlSkill - tackleSkill) / 210f + contactBonus * 0.30f,
-                0.05f, 0.42f);
-            if (DecisionRoll(defenderId, ownerId, _decisionSerial + 59) < foulChance)
-            {
-                ResolveLiveFoul(defenderId, ownerId, distanceMeters);
-                return true;
-            }
-            return false;
-        }
-
-        _ballOwnerId = defenderId;
-        ResetCarrySequence();
-        _activeTeamId = _playerTeams[defenderId];
-        Simulation!.set_live_possession(_activeTeamId);
-        _attackProgress = Mathf.Clamp(AttackProgress(_activeTeamId, BallPosition), 0.16f, 0.62f);
-        _phaseLane = CurrentPositions[defenderId].Y;
-        Interceptions++;
-        SelectPhasePlayers();
-        _nextDecisionTime = _visualTime + 0.38f;
-        SetAction($"{PlayerName(defenderId)} đoạt bóng từ {PlayerName(ownerId)}");
-        return true;
+        StartDribbleTouch(ownerId, escapingPressure);
     }
 
     private void ResolveLiveFoul(StringName offenderId, StringName victimId, float contactDistanceMeters)
@@ -260,7 +207,7 @@ public partial class MatchPitch2D
             OwnGoalX(foulingTeamId));
         bool playsAdvantage = !awardsPenalty && _advantageRuleEvaluator.ShouldPlay(
             new AdvantageContext(
-                _ballOwnerId == victimId,
+                _state.BallOwnerId == victimId,
                 card,
                 _attackProgress,
                 contactDistanceMeters,
@@ -273,11 +220,11 @@ public partial class MatchPitch2D
                 victimId);
             if (advantageEvent is not null)
             {
-                EmitSignal(SignalName.LiveMatchEvent, advantageEvent);
+                LiveMatchEvent?.Invoke(advantageEvent);
             }
             if (card == "yellow")
             {
-                _pendingCardActions.Add(new PendingCardAction(foulingTeamId, offenderId, card));
+                _state.PendingCardActions.Add(new PendingCardAction(foulingTeamId, offenderId, card));
             }
             FoulsCommitted++;
             GivePossessionTo(victimId, 0.34f);
@@ -291,7 +238,7 @@ public partial class MatchPitch2D
             foulingTeamId, offenderId, victimId, card);
         if (foulEvent is not null)
         {
-            EmitSignal(SignalName.LiveMatchEvent, foulEvent);
+            LiveMatchEvent?.Invoke(foulEvent);
         }
         FoulsCommitted++;
         bool isSentOff = Simulation.get_state(foulingTeamId)?.IsSentOff(offenderId) == true;
@@ -315,36 +262,38 @@ public partial class MatchPitch2D
                 : $"{PlayerName(offenderId)} phạm lỗi — đội bạn chuẩn bị đưa bóng vào cuộc");
     }
 
-    private StringName ChoosePassTarget(bool preferSafe = false) =>
-        ChoosePassSelection(preferSafe).ReceiverId;
+    private StringName ChoosePassTarget(bool preferSafe = false)
+    {
+        return ChoosePassSelection(preferSafe).ReceiverId ?? new StringName();
+    }
 
     private PassSelection ChoosePassSelection(bool preferSafe = false)
     {
         if (Simulation is null)
             return default;
-        if (_ballOwnerId == new StringName() || !CurrentPositions.ContainsKey(_ballOwnerId))
+        if (_state.BallOwnerId == new StringName() || !CurrentPositions.ContainsKey(_state.BallOwnerId))
             return default;
 
-        float direction = AttackDirection(_activeTeamId);
-        Vector2 owner = CurrentPositions[_ballOwnerId];
-        string ownerRole = _playerRoles[_ballOwnerId];
-        float ownerAttackProgress = AttackProgress(_activeTeamId, owner);
-        int ownerVision = GetPlayer(_ballOwnerId)?.vision ?? 50;
+        float direction = AttackDirection(_state.ActiveTeamId);
+        Vector2 owner = CurrentPositions[_state.BallOwnerId];
+        string ownerRole = _playerRoles[_state.BallOwnerId];
+        float ownerAttackProgress = AttackProgress(_state.ActiveTeamId, owner);
+        int ownerVision = GetPlayer(_state.BallOwnerId)?.vision ?? 50;
         PassSelection bestPass = default;
         float bestScore = float.NegativeInfinity;
         foreach (StringName candidateId in CurrentPositions.Keys)
         {
-            if (candidateId == _ballOwnerId || _playerTeams[candidateId] != _activeTeamId || _playerRoles[candidateId] == "GK")
+            if (candidateId == _state.BallOwnerId || _playerTeams[candidateId] != _state.ActiveTeamId || _playerRoles[candidateId] == "GK")
                 continue;
             bool candidateIsOffside = IsCurrentlyOffside(candidateId);
             Vector2 candidate = CurrentPositions[candidateId];
             float distanceMeters = FootballPitchDimensions.DistanceMeters(owner, candidate);
             float forwardGainMeters = direction * (candidate.X - owner.X) *
                                       FootballPitchDimensions.LengthMeters;
-            float laneRisk = PassingLaneRisk(owner, candidate, _activeTeamId);
+            float laneRisk = PassingLaneRisk(owner, candidate, _state.ActiveTeamId);
             float receiverSpaceMeters = SpaceEvaluator.NearestOpponentDistanceMeters(
                 candidate,
-                _activeTeamId,
+                _state.ActiveTeamId,
                 CurrentPositions,
                 _playerTeams);
             if (!_passOptionEvaluator.CanConsider(
@@ -368,7 +317,7 @@ public partial class MatchPitch2D
             }
             float receivingPressure = SpaceEvaluator.OpponentPressure(
                 candidate,
-                _activeTeamId,
+                _state.ActiveTeamId,
                 CurrentPositions,
                 _playerTeams);
             float forwardWeight = preferSafe ? 1.35f : 2.7f;
@@ -384,7 +333,7 @@ public partial class MatchPitch2D
             score += Mathf.Clamp((receiverSpaceMeters - 2f) / 8f, 0f, 1f) * 0.22f;
             score += _decisionVarietyTracker.PassScoreAdjustment(
                 candidateId,
-                VarietyRoll(_ballOwnerId, candidateId, _decisionSerial + _phaseSerial * 97),
+                VarietyRoll(_state.BallOwnerId, candidateId, _decisionSerial + _phaseSerial * 97),
                 preferSafe);
             if (candidateIsOffside)
             {
@@ -417,15 +366,16 @@ public partial class MatchPitch2D
     {
         _carryOwnerId = new StringName();
         _consecutiveCarries = 0;
+        _state.GroundDuel.Reset();
     }
 
     private bool IsCurrentlyOffside(StringName playerId)
     {
         return _offsideRule.IsOffside(
             playerId,
-            _activeTeamId,
+            _state.ActiveTeamId,
             BallPosition,
-            AttackDirection(_activeTeamId),
+            AttackDirection(_state.ActiveTeamId),
             CurrentPositions,
             _playerTeams);
     }

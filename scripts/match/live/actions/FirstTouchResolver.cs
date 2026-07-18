@@ -43,6 +43,7 @@ public sealed class FirstTouchResolver
         float typePenalty = passType switch
         {
             LivePassType.Cross => 0.12f,
+            LivePassType.Lofted => 0.09f,
             LivePassType.ThroughBall => 0.05f,
             _ => 0f
         };

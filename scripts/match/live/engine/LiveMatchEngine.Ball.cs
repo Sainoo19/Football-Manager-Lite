@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private void UpdateBall(float delta)
     {
@@ -10,9 +10,25 @@ public partial class MatchPitch2D
         if (_ballActionActive)
         {
             _ballActionElapsed += delta;
+            if (_aerialFlightActive)
+            {
+                AerialBallSample sample = _aerialTrajectory.Sample(_ballActionElapsed);
+                BallPosition = sample.Position;
+                _ballVisualHeight = sample.HeightMeters;
+                _ballVerticalVelocityMetersPerSecond = sample.VerticalVelocityMetersPerSecond;
+                if (sample.HasLanded)
+                {
+                    CompleteBallAction();
+                }
+                return;
+            }
             float progress = Mathf.Clamp(_ballActionElapsed / Mathf.Max(_ballActionDuration, 0.01f), 0, 1);
             BallPosition = _ballActionFrom.Lerp(_ballActionTo, progress);
-            _ballVisualHeight = Mathf.Sin(progress * Mathf.Pi) * _ballActionArc;
+            _ballVisualHeight = _ballActionKind == BallActionKind.Shot
+                ? Mathf.Sin(progress * Mathf.Pi) *
+                  _ballActionArc * FootballPitchDimensions.WidthMeters
+                : 0f;
+            _ballVerticalVelocityMetersPerSecond = 0f;
             if (progress is >= 0.14f and <= 0.94f &&
                 _ballActionKind is BallActionKind.Pass or BallActionKind.ThroughBall or BallActionKind.Cross)
             {
@@ -24,16 +40,30 @@ public partial class MatchPitch2D
             }
             return;
         }
-        if (_looseBallActive)
+        if (_state.IsLooseBallActive)
         {
             AdvanceRollingBall(delta);
             return;
         }
-        if (_ballOwnerId != new StringName() && CurrentPositions.TryGetValue(_ballOwnerId, out Vector2 owner))
+        if (_state.BallOwnerId != new StringName() && CurrentPositions.TryGetValue(_state.BallOwnerId, out Vector2 owner))
         {
-            float direction = AttackDirection(_playerTeams[_ballOwnerId]);
+            float direction = AttackDirection(_playerTeams[_state.BallOwnerId]);
+            Vector2 ballTarget = owner + new Vector2(direction * 0.012f, 0.012f);
+            GroundDuelSequenceState dribbleSequence = _state.GroundDuel;
+            if (dribbleSequence.HasCarrier &&
+                dribbleSequence.CarrierId == _state.BallOwnerId &&
+                dribbleSequence.TouchCount > 0)
+            {
+                Vector2 touchDirectionMeters = FootballPitchDimensions.ToMeters(dribbleSequence.CurrentTouch.Target) -
+                                               FootballPitchDimensions.ToMeters(owner);
+                Vector2 touchDirection = touchDirectionMeters.LengthSquared() > 0.001f
+                    ? touchDirectionMeters.Normalized()
+                    : new Vector2(direction, 0f);
+                Vector2 leadMeters = touchDirection * dribbleSequence.CurrentTouch.BallLeadMeters;
+                ballTarget = owner + FootballPitchDimensions.ToNormalized(leadMeters);
+            }
             BallPosition = BallPosition.Lerp(
-                owner + new Vector2(direction * 0.012f, 0.012f),
+                SpaceEvaluator.ClampToPitch(ballTarget),
                 1f - Mathf.Exp(-delta * 8f));
         }
     }
@@ -77,9 +107,13 @@ public partial class MatchPitch2D
         if (type == "full_time")
         {
             _ballActionActive = false;
-            _looseBallActive = false;
-            _restartPending = false;
-            _ballOwnerId = new StringName();
+            _aerialFlightActive = false;
+            _aerialContenderIds.Clear();
+            _ballVisualHeight = 0f;
+            _ballVerticalVelocityMetersPerSecond = 0f;
+            _state.IsLooseBallActive = false;
+            _state.IsRestartPending = false;
+            _state.BallOwnerId = new StringName();
             _runtime.SetPhase(LiveMatchPhase.FullTime);
             SetAction("Hết trận");
             return;
@@ -87,12 +121,13 @@ public partial class MatchPitch2D
         if (type is "substitution" or "tactic") return;
         if (type == "yellow_card") StartPass(ChoosePassTarget());
         else if (matchEvent.player_id != new StringName() && CurrentPositions.ContainsKey(matchEvent.player_id)) StartPass(matchEvent.player_id);
-        else if (_visualTime - _lastPassTime >= 0.4f) StartPass(ChoosePassTarget());
+        else if (_state.VisualTime - _lastPassTime >= 0.4f) StartPass(ChoosePassTarget());
     }
 
     private void StartPass(StringName receiverId, BallActionKind requestedKind = BallActionKind.Pass)
     {
         if (Simulation is null ||
+            receiverId is null ||
             receiverId == new StringName() ||
             !CurrentPositions.TryGetValue(receiverId, out Vector2 receiverPosition))
         {
@@ -101,7 +136,7 @@ public partial class MatchPitch2D
         Vector2 runTarget = TargetPositions.GetValueOrDefault(receiverId, receiverPosition);
         BallActionKind kind = requestedKind;
         float receiverDistanceMeters = FootballPitchDimensions.DistanceMeters(BallPosition, receiverPosition);
-        float forwardGainMeters = AttackDirection(_activeTeamId) * (receiverPosition.X - BallPosition.X) *
+        float forwardGainMeters = AttackDirection(_state.ActiveTeamId) * (receiverPosition.X - BallPosition.X) *
                                   FootballPitchDimensions.LengthMeters;
         if (kind == BallActionKind.Pass &&
             receiverId == _primaryRunnerId &&
@@ -110,9 +145,18 @@ public partial class MatchPitch2D
         {
             kind = BallActionKind.ThroughBall;
         }
+        StringName passerId = _state.BallOwnerId;
+        FootballPlayer? passer = GetPlayer(passerId);
+        if (kind == BallActionKind.Pass &&
+            receiverDistanceMeters >= 24f &&
+            (passer?.passing ?? 50) + (passer?.vision ?? 50) >= 126)
+        {
+            kind = BallActionKind.LoftedPass;
+        }
         LivePassType passType = kind switch
         {
             BallActionKind.ThroughBall => LivePassType.ThroughBall,
+            BallActionKind.LoftedPass => LivePassType.Lofted,
             BallActionKind.Cross => LivePassType.Cross,
             _ => LivePassType.Standard
         };
@@ -122,8 +166,8 @@ public partial class MatchPitch2D
                 BallPosition,
                 receiverPosition,
                 runTarget,
-                AttackDirection(_activeTeamId),
-                _activeTeamId,
+                AttackDirection(_state.ActiveTeamId),
+                _state.ActiveTeamId,
                 CurrentPositions,
                 _playerTeams);
         }
@@ -132,8 +176,6 @@ public partial class MatchPitch2D
             receiverPosition,
             runTarget,
             passType);
-        StringName passerId = _ballOwnerId;
-        FootballPlayer? passer = GetPlayer(passerId);
         StringName nearestOpponentId = NearestOpponent(passerId);
         float pressureDistanceMeters = nearestOpponentId == new StringName()
             ? float.PositiveInfinity
@@ -152,15 +194,15 @@ public partial class MatchPitch2D
             DecisionRoll(passerId, receiverId, _decisionSerial + 503),
             DecisionRoll(passerId, receiverId, _decisionSerial + 521));
         ResetCarrySequence();
-        _lastPassTime = _visualTime;
+        _lastPassTime = _state.VisualTime;
         _decisionVarietyTracker.RecordPassTarget(receiverId);
         PassAttempts++;
-        Simulation.RegisterLivePassAttempt(_activeTeamId);
+        Simulation.RegisterLivePassAttempt(_state.ActiveTeamId);
         bool receiverIsOffside = _offsideRule.IsOffside(
             receiverId,
-            _activeTeamId,
+            _state.ActiveTeamId,
             BallPosition,
-            AttackDirection(_activeTeamId),
+            AttackDirection(_state.ActiveTeamId),
             CurrentPositions,
             _playerTeams);
         StartBallAction(
@@ -178,6 +220,7 @@ public partial class MatchPitch2D
         string action = kind switch
         {
             BallActionKind.ThroughBall => "chọc khe vào khoảng trống cho",
+            BallActionKind.LoftedPass => "phất bóng bổng tới khu vực của",
             BallActionKind.Cross => "tạt bóng tới",
             _ => "chuyền cho"
         };
@@ -186,14 +229,32 @@ public partial class MatchPitch2D
 
     private void StartBallAction(Vector2 destination, float duration, float arc, StringName nextOwner, BallActionKind kind = BallActionKind.Pass)
     {
-        _isBallVisible = true;
-        _actionSourceId = _ballOwnerId;
-        _actionSourceTeamId = _actionSourceId != new StringName() && _playerTeams.ContainsKey(_actionSourceId) ? _playerTeams[_actionSourceId] : _activeTeamId;
+        _state.IsBallVisible = true;
+        _actionSourceId = _state.BallOwnerId;
+        _actionSourceTeamId = _actionSourceId != new StringName() && _playerTeams.ContainsKey(_actionSourceId) ? _playerTeams[_actionSourceId] : _state.ActiveTeamId;
         _ballActionActive = true;
         _ballActionFrom = BallPosition;
         _ballActionTo = destination;
         _ballActionElapsed = 0;
-        _ballActionDuration = duration;
+        AerialDeliveryType? aerialDeliveryType = AerialDeliveryFor(kind);
+        _aerialFlightActive = aerialDeliveryType.HasValue;
+        if (aerialDeliveryType.HasValue)
+        {
+            _aerialTrajectory = _aerialBallTrajectoryPlanner.Plan(
+                _ballActionFrom,
+                destination,
+                aerialDeliveryType.Value);
+            _ballActionTo = _aerialTrajectory.LandingPoint;
+            _ballActionDuration = _aerialTrajectory.FlightTimeSeconds;
+            _ballVerticalVelocityMetersPerSecond =
+                _aerialTrajectory.InitialVerticalVelocityMetersPerSecond;
+        }
+        else
+        {
+            _aerialTrajectory = default;
+            _ballActionDuration = duration;
+            _ballVerticalVelocityMetersPerSecond = 0f;
+        }
         _ballActionArc = arc;
         _ballNextOwnerId = nextOwner;
         _ballActionKind = kind;
@@ -204,9 +265,10 @@ public partial class MatchPitch2D
             _pendingPassSpeedMetersPerSecond = 0f;
         }
         _pendingOffsideReceiverId = new StringName();
-        _looseBallVelocityMetersPerSecond = Vector2.Zero;
+        _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
         _interceptionAttemptedBy.Clear();
-        _ballOwnerId = new StringName();
+        _state.BallOwnerId = new StringName();
+        PrepareAerialContenders();
         SelectPhasePlayers();
     }
 
@@ -225,7 +287,7 @@ public partial class MatchPitch2D
         }
         List<StringName> candidates = preferred.Count > 0 ? preferred : fallback;
         if (candidates.Count == 0) return new StringName();
-        return candidates[(Simulation.current_minute + (int)(_visualTime * 3)) % candidates.Count];
+        return candidates[(Simulation.current_minute + (int)(_state.VisualTime * 3)) % candidates.Count];
     }
 
     private StringName ChooseGoalkeeper(StringName teamId)
@@ -239,14 +301,22 @@ public partial class MatchPitch2D
     {
         BallActionKind completedKind = _ballActionKind;
         StringName intendedReceiverId = _ballNextOwnerId;
+        bool completedAerialFlight = _aerialFlightActive;
         _ballActionActive = false;
+        _aerialFlightActive = false;
         _ballNextOwnerId = new StringName();
         _ballActionKind = BallActionKind.None;
         _ballVisualHeight = 0f;
+        _ballVerticalVelocityMetersPerSecond = 0f;
 
         if (completedKind == BallActionKind.Shot)
         {
             CompleteLiveShot();
+        }
+        else if (completedAerialFlight &&
+                 completedKind is BallActionKind.LoftedPass or BallActionKind.Cross or BallActionKind.Clearance)
+        {
+            ResolveAerialArrival(completedKind, intendedReceiverId);
         }
         else if (_pendingOffsideReceiverId != new StringName())
         {
@@ -258,7 +328,21 @@ public partial class MatchPitch2D
                 "Bóng được phá lên khoảng trống — hai đội cùng lao tới",
                 RollingVelocityAfterFlight(completedKind));
         }
-        else if (completedKind is BallActionKind.Pass or BallActionKind.ThroughBall or BallActionKind.Cross)
+        else if (completedKind == BallActionKind.HeaderClearance)
+        {
+            _aerialContenderIds.Clear();
+            AerialSecondBalls++;
+            StartLooseBall(
+                "Bóng bật ra sau pha không chiến — hai đội tranh bóng hai",
+                RollingVelocityAfterFlight(completedKind));
+        }
+        else if (completedKind == BallActionKind.HeaderPass)
+        {
+            _aerialContenderIds.Clear();
+            CompletePassReception(intendedReceiverId, completedKind);
+        }
+        else if (completedKind is BallActionKind.Pass or BallActionKind.ThroughBall or
+                 BallActionKind.LoftedPass or BallActionKind.Cross)
         {
             CompletePassReception(intendedReceiverId, completedKind);
         }
@@ -268,7 +352,7 @@ public partial class MatchPitch2D
         }
 
         _pendingOffsideReceiverId = new StringName();
-        _nextDecisionTime = _visualTime + 0.32f;
+        _nextDecisionTime = _state.VisualTime + 0.32f;
         SelectPhasePlayers();
     }
 
@@ -277,6 +361,7 @@ public partial class MatchPitch2D
         float controlDistanceMeters = completedKind switch
         {
             BallActionKind.ThroughBall => 3.2f,
+            BallActionKind.LoftedPass => 3.0f,
             BallActionKind.Cross => 2.7f,
             _ => 2.2f
         };
@@ -348,7 +433,7 @@ public partial class MatchPitch2D
         FootballMatchEvent? offsideEvent = Simulation.RegisterLiveOffside(attackingTeamId, receiverId);
         if (offsideEvent is not null)
         {
-            EmitSignal(SignalName.LiveMatchEvent, offsideEvent);
+            LiveMatchEvent?.Invoke(offsideEvent);
         }
         Vector2 restartPosition = CurrentPositions.GetValueOrDefault(receiverId, BallPosition);
         ScheduleRestart(
@@ -389,7 +474,7 @@ public partial class MatchPitch2D
     private void SetAction(string description)
     {
         LastActionName = description;
-        EmitSignal(SignalName.ActionChanged, description);
+        ActionChanged?.Invoke(description);
     }
 
     private float DecisionRoll(StringName firstId, StringName secondId, int serial)

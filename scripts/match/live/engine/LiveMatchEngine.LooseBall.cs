@@ -1,20 +1,21 @@
 using System.Linq;
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private void StartLooseBall(
         string description = "Bóng bật ra — hai đội tranh bóng hai",
         Vector2 initialVelocityMetersPerSecond = default)
     {
         ClearDirectAttack();
-        _isBallVisible = true;
-        _ballOwnerId = new StringName();
-        _looseBallActive = true;
-        _restartPending = false;
+        ResetCarrySequence();
+        _state.IsBallVisible = true;
+        _state.BallOwnerId = new StringName();
+        _state.IsLooseBallActive = true;
+        _state.IsRestartPending = false;
         _runtime.SetPhase(LiveMatchPhase.LooseBall);
-        _looseBallVelocityMetersPerSecond = initialVelocityMetersPerSecond;
-        _looseBallResolveTime = _visualTime + 0.12f;
+        _state.LooseBallVelocityMetersPerSecond = initialVelocityMetersPerSecond;
+        _state.LooseBallResolveTime = _state.VisualTime + 0.12f;
         SetAction(description);
     }
 
@@ -25,7 +26,7 @@ public partial class MatchPitch2D
         StringName claimingGoalkeeperId = FindClaimingGoalkeeper();
         if (claimingGoalkeeperId != new StringName())
         {
-            _looseBallActive = false;
+            _state.IsLooseBallActive = false;
             LooseBallRecoveries++;
             GivePossessionTo(claimingGoalkeeperId, 0.75f);
             SetAction($"{PlayerName(claimingGoalkeeperId)} lao ra ôm gọn bóng tự do");
@@ -47,10 +48,10 @@ public partial class MatchPitch2D
         float winnerDistanceMeters = FootballPitchDimensions.DistanceMeters(CurrentPositions[winnerId], BallPosition);
         if (winnerDistanceMeters > controlDistanceMeters)
         {
-            _looseBallResolveTime = _visualTime + 0.10f;
+            _state.LooseBallResolveTime = _state.VisualTime + 0.10f;
             return;
         }
-        _looseBallActive = false;
+        _state.IsLooseBallActive = false;
         LooseBallRecoveries++;
         GivePossessionTo(winnerId, 0.26f);
         SetAction($"{PlayerName(winnerId)} giành được bóng hai");
@@ -90,8 +91,10 @@ public partial class MatchPitch2D
         float rollingSpeed = completedKind switch
         {
             BallActionKind.ThroughBall => 6.8f,
+            BallActionKind.LoftedPass => 5.8f,
             BallActionKind.Cross => 6.2f,
             BallActionKind.Clearance => 7.4f,
+            BallActionKind.HeaderClearance => 5.8f,
             BallActionKind.Shot => 6.5f,
             _ => 5.6f
         };
@@ -102,9 +105,9 @@ public partial class MatchPitch2D
     {
         RollingBallStep step = _rollingBallPhysics.Advance(
             BallPosition,
-            _looseBallVelocityMetersPerSecond,
+            _state.LooseBallVelocityMetersPerSecond,
             delta);
-        _looseBallVelocityMetersPerSecond = step.VelocityMetersPerSecond;
+        _state.LooseBallVelocityMetersPerSecond = step.VelocityMetersPerSecond;
         if (step.Position.X is < 0f or > 1f || step.Position.Y is < 0f or > 1f)
         {
             ResolveRollingBallOut(step.Position);
@@ -119,7 +122,7 @@ public partial class MatchPitch2D
         if (Simulation is null || _actionSourceTeamId == new StringName())
         {
             BallPosition = ClampToPitch(outPosition);
-            _looseBallVelocityMetersPerSecond = Vector2.Zero;
+            _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
             return;
         }
 

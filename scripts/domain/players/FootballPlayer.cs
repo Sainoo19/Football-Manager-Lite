@@ -24,6 +24,11 @@ public partial class FootballPlayer : Resource
     [Export(PropertyHint.Range, "1,99")] public int FirstTouch { get; set; } = 50;
     [Export(PropertyHint.Range, "1,99")] public int Technique { get; set; } = 50;
     [Export(PropertyHint.Range, "1,99")] public int Composure { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int Strength { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int Balance { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int Agility { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int Heading { get; set; } = 50;
+    [Export(PropertyHint.Range, "1,99")] public int JumpingReach { get; set; } = 50;
 
     public FootballPlayer setup(
         StringName playerId,
@@ -57,6 +62,11 @@ public partial class FootballPlayer : Resource
         FirstTouch = Attribute(overall + (position is "CM" or "AM" or "LW" or "RW" or "ST" ? 3 : -2));
         Technique = Attribute(overall + (position is "CM" or "AM" or "LW" or "RW" ? 4 : position == "GK" ? -8 : 0));
         Composure = Attribute(overall + (position is "GK" or "CB" or "DM" or "ST" ? 3 : 0));
+        Strength = Attribute(overall + (position is "CB" or "DM" or "ST" ? 5 : position is "LW" or "RW" ? -2 : 0));
+        Balance = Attribute(overall + (position is "CM" or "AM" or "LW" or "RW" or "ST" ? 3 : 0));
+        Agility = Attribute(overall + (position is "AM" or "LW" or "RW" ? 6 : position is "CB" or "GK" ? -5 : 1));
+        Heading = Attribute(overall + (position is "CB" or "ST" ? 6 : position is "LW" or "RW" ? -2 : position == "GK" ? -12 : 0));
+        JumpingReach = Attribute(overall + (position is "GK" or "CB" or "ST" ? 6 : position is "LW" or "RW" or "AM" ? -2 : 1));
     }
 
     private static int Attribute(int value) => Mathf.Clamp(value, 1, 99);

@@ -1,6 +1,6 @@
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private bool TryResolveFinalThirdAction(StringName ownerId, float pressureDistanceMeters)
     {

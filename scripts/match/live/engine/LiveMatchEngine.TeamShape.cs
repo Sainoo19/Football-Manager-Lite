@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Godot;
 using Godot.Collections;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private const float PossessionIntentPlanningInterval = 0.18f;
     private const float BallInFlightPlanningInterval = 0.12f;
@@ -15,17 +15,17 @@ public partial class MatchPitch2D
             return;
         }
 
-        if (_restartPending && _restartType == "goal_kick")
+        if (_state.IsRestartPending && _state.RestartType == "goal_kick")
         {
             ApplyGoalKickRestartTargets();
             return;
         }
-        if (_restartPending && _restartType == "free_kick")
+        if (_state.IsRestartPending && _state.RestartType == "free_kick")
         {
             ApplyFreeKickRestartTargets();
             return;
         }
-        if (_restartPending && _restartType == "penalty")
+        if (_state.IsRestartPending && _state.RestartType == "penalty")
         {
             ApplyPenaltyRestartTargets();
             return;
@@ -41,6 +41,8 @@ public partial class MatchPitch2D
                 _ => intent.Target
             };
         }
+        ApplyGroundDuelTargets();
+        ApplyAerialContestTargets();
     }
 
     private void PlanPlayerIntents(bool force)
@@ -50,12 +52,12 @@ public partial class MatchPitch2D
             return;
         }
 
-        if (!force && _playerIntents.Count == CurrentPositions.Count && _visualTime < _nextIntentPlanTime)
+        if (!force && _playerIntents.Count == CurrentPositions.Count && _state.VisualTime < _nextIntentPlanTime)
         {
             return;
         }
 
-        _attackProgress = AttackProgress(_activeTeamId, BallPosition);
+        _attackProgress = AttackProgress(_state.ActiveTeamId, BallPosition);
         _phaseLane = BallPosition.Y;
 
         FootballWorldSnapshot world = new(
@@ -65,12 +67,12 @@ public partial class MatchPitch2D
             _playerRoles,
             BallPosition,
             _ballActionTo,
-            _ballOwnerId,
+            _state.BallOwnerId,
             _ballNextOwnerId,
-            _activeTeamId,
+            _state.ActiveTeamId,
             Simulation.home.team.id,
             _ballActionActive,
-            _looseBallActive,
+            _state.IsLooseBallActive,
             _sideController.HomeAttacksLeft,
             _ballActionActive && _ballActionKind == BallActionKind.Shot,
             _ballActionActive && _ballActionKind == BallActionKind.Cross);
@@ -85,7 +87,7 @@ public partial class MatchPitch2D
             _playerIntents[playerId] = intent;
             TargetPositions[playerId] = intent.Target;
 
-            if (_playerTeams[playerId] == _activeTeamId)
+            if (_playerTeams[playerId] == _state.ActiveTeamId)
             {
                 if (_primaryRunnerId == new StringName() &&
                     intent.Kind is PlayerIntentKind.RunIntoSpace or PlayerIntentKind.ReceivePass)
@@ -102,13 +104,14 @@ public partial class MatchPitch2D
                 _pressingPlayerId = playerId;
             }
         }
+        ApplyAerialContestTargets();
 
-        float planningInterval = _looseBallActive
+        float planningInterval = _state.IsLooseBallActive
             ? LooseBallPlanningInterval
             : _ballActionActive
                 ? BallInFlightPlanningInterval
                 : PossessionIntentPlanningInterval;
-        _nextIntentPlanTime = _visualTime + planningInterval;
+        _nextIntentPlanTime = _state.VisualTime + planningInterval;
     }
 
     private void AdvancePhase(bool turnover, FootballMatchEvent? focusEvent)
@@ -119,7 +122,7 @@ public partial class MatchPitch2D
         }
 
         _phaseSerial++;
-        _attackProgress = AttackProgress(_activeTeamId, BallPosition);
+        _attackProgress = AttackProgress(_state.ActiveTeamId, BallPosition);
         _phaseLane = BallPosition.Y;
 
         string eventType = focusEvent?.event_type.ToString() ?? string.Empty;

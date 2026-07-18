@@ -1,11 +1,11 @@
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private void TryInterceptMovingBall()
     {
         if (Simulation is null || _actionSourceTeamId == new StringName()) return;
-        if (_ballActionKind == BallActionKind.Cross && TryGoalkeeperClaimCross())
+        if (_aerialFlightActive)
         {
             return;
         }
@@ -62,44 +62,5 @@ public partial class MatchPitch2D
             ? $"{PlayerName(defenderId)} đọc đường chuyền của {PlayerName(_actionSourceId)} cho " +
               $"{PlayerName(intendedReceiverId)} và cắt bóng"
             : $"{PlayerName(defenderId)} cắt được đường bóng");
-    }
-
-    private bool TryGoalkeeperClaimCross()
-    {
-        if (Simulation is null)
-        {
-            return false;
-        }
-
-        StringName defendingTeamId = _actionSourceTeamId == Simulation.home.team.id
-            ? Simulation.away.team.id
-            : Simulation.home.team.id;
-        StringName goalkeeperId = ChooseGoalkeeper(defendingTeamId);
-        if (goalkeeperId == new StringName() ||
-            _interceptionAttemptedBy.Contains(goalkeeperId) ||
-            FootballPitchDimensions.DistanceMeters(CurrentPositions[goalkeeperId], BallPosition) > 2.2f)
-        {
-            return false;
-        }
-
-        _interceptionAttemptedBy.Add(goalkeeperId);
-        FootballPlayer? goalkeeper = GetPlayer(goalkeeperId);
-        float claimChance = Mathf.Clamp(
-            0.52f + ((goalkeeper?.goalkeeping ?? 55) - 65) / 120f,
-            0.32f,
-            0.82f);
-        if (DecisionRoll(goalkeeperId, _actionSourceId, _decisionSerial + 229) >= claimChance)
-        {
-            return false;
-        }
-
-        _ballActionActive = false;
-        _ballActionKind = BallActionKind.None;
-        _ballNextOwnerId = new StringName();
-        _pendingOffsideReceiverId = new StringName();
-        _ballVisualHeight = 0f;
-        GivePossessionTo(goalkeeperId, 0.75f);
-        SetAction($"{PlayerName(goalkeeperId)} lao ra bắt gọn quả tạt");
-        return true;
     }
 }

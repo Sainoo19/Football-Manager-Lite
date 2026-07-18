@@ -60,6 +60,7 @@ public sealed class PassExecutionResolver
         float passTypeDifficulty = passType switch
         {
             LivePassType.ThroughBall => 0.12f,
+            LivePassType.Lofted => 0.14f,
             LivePassType.Cross => 0.18f,
             _ => 0f
         };
@@ -80,6 +81,7 @@ public sealed class PassExecutionResolver
         float baseSpeed = passType switch
         {
             LivePassType.ThroughBall => 19.5f,
+            LivePassType.Lofted => 19f,
             LivePassType.Cross => 24f,
             _ => 18f
         };

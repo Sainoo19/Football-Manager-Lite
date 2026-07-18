@@ -109,13 +109,25 @@ public sealed class FootballMovementController
             PlayerIntentKind.Goalkeep => 4.2f,
             PlayerIntentKind.HoldShape => 4.6f,
             PlayerIntentKind.CarryBall => 5.8f,
+            PlayerIntentKind.DribbleCloseControl => 5.2f,
+            PlayerIntentKind.DribbleKnockOn => 7.4f,
+            PlayerIntentKind.DribbleChangeDirection => 5.0f,
+            PlayerIntentKind.ShieldBall => 2.4f,
+            PlayerIntentKind.HoldUpBall => 2.8f,
             PlayerIntentKind.SupportBall => 5.6f,
             PlayerIntentKind.CoverPress => 6.4f,
+            PlayerIntentKind.CloseDownBall => 7.4f,
+            PlayerIntentKind.JockeyBall => 4.8f,
+            PlayerIntentKind.ContainBall => 4.4f,
+            PlayerIntentKind.TackleBall => 6.6f,
+            PlayerIntentKind.ShoulderChallenge => 6.2f,
             PlayerIntentKind.MarkOpponent => 6.2f,
             PlayerIntentKind.ReceivePass => 7.2f,
             PlayerIntentKind.RunIntoSpace => 7.8f,
             PlayerIntentKind.PressBall => 8.0f,
             PlayerIntentKind.ChaseLooseBall => 8.2f,
+            PlayerIntentKind.ContestAerialBall => 7.8f,
+            PlayerIntentKind.ClaimAerialBall => 7.2f,
             PlayerIntentKind.RepositionForRestart => 6.0f,
             _ => 5f
         };
@@ -127,5 +139,9 @@ public sealed class FootballMovementController
         PlayerIntentKind.ReceivePass or
         PlayerIntentKind.RunIntoSpace or
         PlayerIntentKind.PressBall or
-        PlayerIntentKind.ChaseLooseBall;
+        PlayerIntentKind.CloseDownBall or
+        PlayerIntentKind.DribbleKnockOn or
+        PlayerIntentKind.ChaseLooseBall or
+        PlayerIntentKind.ContestAerialBall or
+        PlayerIntentKind.ClaimAerialBall;
 }

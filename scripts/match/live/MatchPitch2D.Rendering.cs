@@ -78,16 +78,16 @@ public partial class MatchPitch2D
         foreach ((StringName playerId, Vector2 normalized) in CurrentPositions)
         {
             Vector2 point = ToFieldPoint(normalized, field);
-            bool isHome = _playerTeams[playerId] == Simulation.home.team.id;
+            bool isHome = PlayerTeams[playerId] == Simulation.home.team.id;
             Color color = isHome ? HomeColor : AwayColor;
-            if (_playerRoles[playerId] == "GK")
+            if (PlayerRoles[playerId] == "GK")
                 color = isHome ? new Color("f1c75b") : new Color("ec9f45");
             DrawCircle(point + new Vector2(1.5f, 2), playerRadius + 0.5f, new Color(0, 0, 0, 0.32f));
             DrawCircle(point, playerRadius, color);
             DrawArc(point, playerRadius, 0, Mathf.Tau, 24, new Color(1, 1, 1, 0.84f), 1.5f);
-            _playerNumbers.TryGetValue(playerId, out int squadNumber);
+            PlayerNumbers.TryGetValue(playerId, out int squadNumber);
             string markerText = MarkerLabelMode == PlayerMarkerLabelMode.Position
-                ? _playerRoles[playerId]
+                ? PlayerRoles[playerId]
                 : squadNumber > 0 ? squadNumber.ToString() : "?";
             DrawString(
                 ThemeDB.FallbackFont,
@@ -102,17 +102,19 @@ public partial class MatchPitch2D
 
     private void DrawBall(Rect2 field)
     {
-        if (!_isBallVisible)
+        if (!IsBallVisible)
         {
             return;
         }
 
-        Vector2 ballPoint = ToFieldPoint(BallPosition, field);
-        if (_ballActionActive)
-            DrawLine(ballPoint, ToFieldPoint(_ballActionTo, field), new Color(1, 1, 1, 0.13f), 1);
-        float liftPixels = _ballVisualHeight * field.Size.Y * 0.20f;
+        Vector2 groundPoint = ToFieldPoint(BallPosition, field);
+        if (IsBallInFlight)
+            DrawLine(groundPoint, ToFieldPoint(BallFlightTarget, field), new Color(1, 1, 1, 0.13f), 1);
+        float pixelsPerPitchMeter = field.Size.Y / FootballPitchDimensions.WidthMeters;
+        float liftPixels = BallVisualHeight * pixelsPerPitchMeter * 0.72f;
+        Vector2 ballPoint = groundPoint - new Vector2(liftPixels * 0.32f, liftPixels * 0.72f);
         float ballRadius = 4.5f + Mathf.Min(liftPixels * 0.10f, 1.4f);
-        DrawCircle(ballPoint + new Vector2(1.5f + liftPixels, 2f + liftPixels), 5, new Color(0, 0, 0, 0.38f));
+        DrawCircle(groundPoint + new Vector2(1.5f, 2f), 5, new Color(0, 0, 0, 0.38f));
         DrawCircle(ballPoint, ballRadius, BallColor);
         DrawArc(ballPoint, ballRadius, 0, Mathf.Tau, 20, new Color("27313d"), 1);
     }

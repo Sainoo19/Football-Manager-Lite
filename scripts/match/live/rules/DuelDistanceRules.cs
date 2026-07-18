@@ -2,6 +2,9 @@ using Godot;
 
 public sealed class DuelDistanceRules
 {
+    public const float EngagementStartDistanceMeters = 3.8f;
+    public const float EngagementExitDistanceMeters = 4.8f;
+    public const float MinimumPlayerSeparationMeters = 0.70f;
     public const float TackleAttemptDistanceMeters = 1.6f;
     public const float PressureDistanceMeters = 3.2f;
 

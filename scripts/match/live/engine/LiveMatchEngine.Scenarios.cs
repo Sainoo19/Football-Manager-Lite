@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     public bool StartScenario(MatchScenarioKind kind)
     {
@@ -70,15 +70,27 @@ public partial class MatchPitch2D
         }
         PlaceScenarioGoalkeepers(attackingTeamId, defendingTeamId);
 
-        _ballOwnerId = ballCarrierId;
+        _state.BallOwnerId = ballCarrierId;
         BallPosition = definition.BallCarrierPosition;
-        _activeTeamId = attackingTeamId;
+        _state.ActiveTeamId = attackingTeamId;
         Simulation.set_live_possession(attackingTeamId);
         _attackProgress = AttackProgress(attackingTeamId, BallPosition);
         _phaseLane = BallPosition.Y;
         SelectPhasePlayers();
 
-        if (definition.StartsWithThroughBall && supportingAttackers.Count > 0)
+        if (kind == MatchScenarioKind.LoftedPassAerialDuel && supportingAttackers.Count > 0)
+        {
+            StartPass(supportingAttackers[0], BallActionKind.LoftedPass);
+        }
+        else if (kind == MatchScenarioKind.AerialCrossIntoBox && supportingAttackers.Count > 0)
+        {
+            StartPass(supportingAttackers[0], BallActionKind.Cross);
+        }
+        else if (kind == MatchScenarioKind.AerialClearanceUnderPressure)
+        {
+            StartClearance(ballCarrierId);
+        }
+        else if (definition.StartsWithThroughBall && supportingAttackers.Count > 0)
         {
             StringName receiverId = supportingAttackers[0];
             Vector2 receptionTarget = definition.ThroughBallReceptionTarget ??
@@ -88,11 +100,10 @@ public partial class MatchPitch2D
         }
         else
         {
-            _nextDecisionTime = _visualTime + 0.35f;
+            _nextDecisionTime = _state.VisualTime + 0.35f;
             SetAction($"Bắt đầu test: {definition.DisplayName}");
         }
 
-        QueueRedraw();
         return true;
     }
 
@@ -105,22 +116,27 @@ public partial class MatchPitch2D
         _playerIntents.Clear();
         _interceptionAttemptedBy.Clear();
         _ballActionActive = false;
+        _aerialFlightActive = false;
+        _aerialTrajectory = default;
+        _aerialContenderIds.Clear();
+        _ballVisualHeight = 0f;
+        _ballVerticalVelocityMetersPerSecond = 0f;
         _ballActionKind = BallActionKind.None;
         _ballNextOwnerId = new StringName();
         _pendingOffsideReceiverId = new StringName();
         _pendingShotOutcome = new StringName();
-        _looseBallActive = false;
-        _looseBallVelocityMetersPerSecond = Vector2.Zero;
-        _restartPending = false;
-        _restartType = new StringName();
+        _state.IsLooseBallActive = false;
+        _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
+        _state.IsRestartPending = false;
+        _state.RestartType = new StringName();
         _freeKickRestartPlan = default;
-        _restartTakerId = new StringName();
+        _state.RestartTakerId = new StringName();
         _kickoffPassPending = false;
         _kickoffReceiverId = new StringName();
         ResetCarrySequence();
-        _isBallVisible = true;
-        _restartBallPlaced = true;
-        _activeTeamId = attackingTeamId;
+        _state.IsBallVisible = true;
+        _state.IsRestartBallPlaced = true;
+        _state.ActiveTeamId = attackingTeamId;
         _nextIntentPlanTime = 0f;
     }
 
@@ -200,6 +216,12 @@ public partial class MatchPitch2D
     {
         MatchScenarioKind.ThroughBallBreakaway => new[] { "AM", "CM", "DM" },
         MatchScenarioKind.TwoAttackersVersusOneDefender => new[] { "ST", "AM", "RW", "LW" },
+        MatchScenarioKind.CentralOneVersusOne => new[] { "AM", "CM", "ST" },
+        MatchScenarioKind.WideOneVersusOne => new[] { "LW", "RW", "LB", "RB" },
+        MatchScenarioKind.StrikerBackToGoalOneVersusOne => new[] { "ST", "AM" },
+        MatchScenarioKind.AerialCrossIntoBox => new[] { "RW", "LW", "RB", "LB" },
+        MatchScenarioKind.LoftedPassAerialDuel => new[] { "CM", "DM", "CB", "AM" },
+        MatchScenarioKind.AerialClearanceUnderPressure => new[] { "CB", "LB", "RB", "DM" },
         _ => new[] { "AM", "CM", "ST" }
     };
 
@@ -207,6 +229,10 @@ public partial class MatchPitch2D
     {
         MatchScenarioKind.ThroughBallBreakaway => new[] { "ST", "LW", "RW" },
         MatchScenarioKind.TwoAttackersVersusOneDefender => new[] { "LW", "RW", "ST", "AM" },
+        MatchScenarioKind.AerialCrossIntoBox when index == 0 => new[] { "ST", "AM" },
+        MatchScenarioKind.AerialCrossIntoBox => new[] { "LW", "RW", "AM" },
+        MatchScenarioKind.LoftedPassAerialDuel => new[] { "ST", "AM", "LW", "RW" },
+        MatchScenarioKind.AerialClearanceUnderPressure => new[] { "ST", "CM", "AM" },
         _ when index == 0 => new[] { "ST", "LW", "RW" },
         _ => new[] { "RW", "LW", "ST", "AM" }
     };

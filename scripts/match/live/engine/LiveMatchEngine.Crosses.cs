@@ -1,6 +1,6 @@
 using Godot;
 
-public partial class MatchPitch2D
+public sealed partial class LiveMatchEngine
 {
     private StringName ChooseCrossTarget(StringName crosserId)
     {
@@ -9,13 +9,13 @@ public partial class MatchPitch2D
             return new StringName();
         }
 
-        float direction = AttackDirection(_activeTeamId);
+        float direction = AttackDirection(_state.ActiveTeamId);
         StringName bestId = new();
         float bestScore = float.NegativeInfinity;
         foreach (StringName candidateId in CurrentPositions.Keys)
         {
             if (candidateId == crosserId ||
-                _playerTeams[candidateId] != _activeTeamId ||
+                _playerTeams[candidateId] != _state.ActiveTeamId ||
                 IsCurrentlyOffside(candidateId))
             {
                 continue;
@@ -25,10 +25,10 @@ public partial class MatchPitch2D
             float distanceMeters = FootballPitchDimensions.DistanceMeters(crosserPosition, candidatePosition);
             float forwardGainMeters = direction * (candidatePosition.X - crosserPosition.X) *
                                       FootballPitchDimensions.LengthMeters;
-            float laneRisk = PassingLaneRisk(crosserPosition, candidatePosition, _activeTeamId);
+            float laneRisk = PassingLaneRisk(crosserPosition, candidatePosition, _state.ActiveTeamId);
             float receiverSpaceMeters = SpaceEvaluator.NearestOpponentDistanceMeters(
                 candidatePosition,
-                _activeTeamId,
+                _state.ActiveTeamId,
                 CurrentPositions,
                 _playerTeams);
             if (!_passOptionEvaluator.CanConsiderCross(
@@ -49,10 +49,10 @@ public partial class MatchPitch2D
             }
 
             float centrality = 1f - Mathf.Clamp(Mathf.Abs(candidatePosition.Y - 0.5f) / 0.5f, 0f, 1f);
-            float candidateProgress = AttackProgress(_activeTeamId, candidatePosition);
+            float candidateProgress = AttackProgress(_state.ActiveTeamId, candidatePosition);
             float receivingPressure = SpaceEvaluator.OpponentPressure(
                 candidatePosition,
-                _activeTeamId,
+                _state.ActiveTeamId,
                 CurrentPositions,
                 _playerTeams);
             float roleBonus = _playerRoles[candidateId] is "ST" or "AM" ? 0.28f : 0f;
