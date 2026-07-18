@@ -469,7 +469,7 @@ public sealed partial class LiveMatchEngine
     private StringName NearestOpponent(StringName playerId)
     {
         if (!CurrentPositions.TryGetValue(playerId, out Vector2 position)) return new StringName();
-        return CurrentPositions.Keys.Where(id => _playerTeams[id] != _playerTeams[playerId] && _playerRoles[id] != "GK")
+        return CurrentPositions.Keys.Where(id => _playerTeams[id] != _playerTeams[playerId])
             .OrderBy(id => CurrentPositions[id].DistanceSquaredTo(position)).FirstOrDefault() ?? new StringName();
     }
 
@@ -479,6 +479,16 @@ public sealed partial class LiveMatchEngine
         foreach (StringName playerId in CurrentPositions.Keys)
         {
             if (_playerTeams[playerId] == passingTeamId || _playerRoles[playerId] == "GK") continue;
+            float pressureDistanceMeters = FootballPitchDimensions.DistanceMeters(
+                from,
+                CurrentPositions[playerId]);
+            if (pressureDistanceMeters <= DuelDistanceRules.PressureDistanceMeters)
+            {
+                // The execution resolver already applies the carrier's immediate pressure.
+                // Counting the same marker as a lane obstacle would make every direction
+                // appear blocked and trap the carrier in the ground-duel pipeline.
+                continue;
+            }
             float distance = DistanceToSegment(CurrentPositions[playerId], from, to);
             highestRisk = Mathf.Max(highestRisk, 1f - Mathf.Clamp(distance / 0.13f, 0, 1));
         }

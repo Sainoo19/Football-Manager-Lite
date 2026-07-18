@@ -126,6 +126,33 @@ public static class GroundDuelTests
         Check(
             shoulder.Type == DefenderEngagementType.ShoulderChallenge,
             "Khi tiền đạo quay lưng, hậu vệ đủ khỏe phải có thể tranh chấp vai.");
+
+        DefenderEngagementPlan emergencyTackle = planner.Plan(CreateDefenderContext(
+            DribbleTouchType.KnockOn,
+            exchangeCount: 2,
+            distanceMeters: 1.3f,
+            cooldown: false,
+            backToGoal: false,
+            decisionRoll: 0.12f,
+            insidePenaltyArea: true,
+            distanceToOwnGoalMeters: 8f));
+        Check(
+            emergencyTackle.Type == DefenderEngagementType.Tackle,
+            "Hậu vệ có bọc lót phải biết chọn đúng nhịp bóng hở để can thiệp trong vùng nguy hiểm.");
+
+        DefenderEngagementPlan goalkeeperSmother = planner.Plan(CreateDefenderContext(
+            DribbleTouchType.CloseControl,
+            exchangeCount: 0,
+            distanceMeters: 1.2f,
+            cooldown: false,
+            backToGoal: false,
+            decisionRoll: 0.95f,
+            insidePenaltyArea: true,
+            distanceToOwnGoalMeters: 5f,
+            isGoalkeeper: true));
+        Check(
+            goalkeeperSmother.Type == DefenderEngagementType.Tackle && goalkeeperSmother.AttemptsChallenge,
+            "Thủ môn đã áp sát phải lao xuống tranh bóng thay vì chạy kèm tiền đạo như một hậu vệ thụ động.");
     }
 
     private static void VerifyGroundDuelOutcomes()
@@ -220,6 +247,14 @@ public static class GroundDuelTests
         Check(
             sequence.TouchCount == 2 && sequence.ExchangeCount == 1 && sequence.HasDefender,
             "State của pha 1 đấu 1 phải giữ được nhiều nhịp chạm bóng trước khi phân thắng bại.");
+
+        sequence.RecordEngagement(new DefenderEngagementPlan(
+            DefenderEngagementType.CloseDown,
+            new Vector2(0.54f, 0.50f),
+            false));
+        Check(
+            sequence.ExchangeCount == 1,
+            "Chạy từ xa tới áp sát không được tính như một nhịp tranh chấp và reset pha 1v1 quá sớm.");
     }
 
     private static void VerifyDistanceAndDirectionChangeTheContest()
@@ -274,7 +309,10 @@ public static class GroundDuelTests
         float distanceMeters,
         bool cooldown,
         bool backToGoal,
-        float decisionRoll)
+        float decisionRoll,
+        bool insidePenaltyArea = false,
+        float distanceToOwnGoalMeters = float.PositiveInfinity,
+        bool isGoalkeeper = false)
     {
         return new DefenderEngagementContext(
             new Vector2(0.52f, 0.50f),
@@ -292,7 +330,13 @@ public static class GroundDuelTests
             cooldown,
             backToGoal,
             true,
-            decisionRoll);
+            decisionRoll,
+            insidePenaltyArea,
+            0.04f,
+            false,
+            1f,
+            distanceToOwnGoalMeters,
+            isGoalkeeper);
     }
 
     private static GroundDuelContext CreateDuelContext(

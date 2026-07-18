@@ -11,7 +11,80 @@ public static class LiveMatchEngineIntegrationTests
         VerifyPlaybackSpeedDoesNotChangeFullMatch();
         VerifySnapshotIsDetachedFromMutableEngineState();
         VerifyPitchAdapterMatchesDirectEngine();
+        VerifyGoalkeeperCanConfrontControlledBall();
         GD.Print("PASS: LiveMatchEngine chạy headless, snapshot bất biến và adapter sân giữ nguyên kết quả.");
+    }
+
+    private static void VerifyGoalkeeperCanConfrontControlledBall()
+    {
+        Array<FootballTeam> teams = new SampleDataFactory().create_teams();
+        FootballMatchSimulation simulation =
+            new FootballMatchSimulation().setup(teams[0], teams[1], 2026071814);
+        simulation.use_live_pitch_events = true;
+        LiveMatchEngine engine = new();
+        engine.SetMatch(simulation);
+        Check(
+            engine.StartScenario(MatchScenarioKind.CentralOneVersusOne),
+            "Không dựng được tình huống kiểm tra thủ môn đối mặt người đang kiểm soát bóng.");
+
+        StringName carrierId = engine.CurrentBallOwnerId;
+        StringName attackingTeamId = engine.PlayerTeams[carrierId];
+        StringName goalkeeperId = engine.PositionView.Keys.First(id =>
+            engine.PlayerTeams[id] != attackingTeamId && engine.PlayerRoles[id] == "GK");
+        StringName defendingTeamId = engine.PlayerTeams[goalkeeperId];
+        Vector2 goalkeeperStart = engine.PositionView[goalkeeperId];
+        float fieldDirection = goalkeeperStart.X < 0.5f ? 1f : -1f;
+        Vector2 carrierPosition = new(
+            goalkeeperStart.X + fieldDirection * (6f / FootballPitchDimensions.LengthMeters),
+            0.50f);
+        Vector2 goalkeeperPosition = new(
+            carrierPosition.X - fieldDirection * (1.2f / FootballPitchDimensions.LengthMeters),
+            0.50f);
+
+        foreach (StringName playerId in engine.PositionView.Keys.ToArray())
+        {
+            if (engine.PlayerTeams[playerId] != defendingTeamId || engine.PlayerRoles[playerId] == "GK")
+            {
+                continue;
+            }
+
+            float stagedX = goalkeeperStart.X < 0.5f ? 0.55f : 0.45f;
+            float stagedY = Mathf.Clamp(engine.PositionView[playerId].Y, 0.08f, 0.92f);
+            engine.OverridePlayerPosition(playerId, new Vector2(stagedX, stagedY));
+        }
+        engine.OverridePlayerPosition(carrierId, carrierPosition);
+        engine.OverridePlayerPosition(goalkeeperId, goalkeeperPosition);
+        Check(engine.Execute(new LiveMatchCommand(LiveMatchCommandKind.Play)), "Tình huống đối mặt phải chạy được.");
+
+        bool observedGoalkeeperPressure = false;
+        bool observedDecisiveOutcome = false;
+        for (int step = 0; step < 80; step++)
+        {
+            engine.AdvanceGameTime(0.05d);
+            observedGoalkeeperPressure |= engine.CurrentIntents.TryGetValue(
+                goalkeeperId,
+                out PlayerIntent? goalkeeperIntent) &&
+                goalkeeperIntent.Kind == PlayerIntentKind.CloseDownBall;
+            observedDecisiveOutcome |= engine.CurrentBallOwnerId != carrierId ||
+                                      engine.IsBallInFlight ||
+                                      engine.IsLooseBall ||
+                                      engine.PendingRestartType != new StringName();
+        }
+
+        LiveMatchMetrics metrics = engine.GetSnapshot().Metrics;
+        string activeDefenderRole = engine.PlayerRoles.TryGetValue(
+            engine.ActiveGroundDuelDefenderId,
+            out string? role)
+            ? role
+            : "none";
+        Check(
+            metrics.GroundDuelExchanges >= 1 && observedGoalkeeperPressure && observedDecisiveOutcome,
+            "Thủ môn ở gần nhất phải được tính là đối thủ tranh bóng và kết thúc pha đối mặt thay vì đứng nhìn; " +
+            $"nhịp={metrics.GroundDuelExchanges}, tắc={metrics.TackleAttempts}, " +
+            $"chủ bóng={engine.CurrentBallOwnerId}, thủ môn={goalkeeperId}, " +
+            $"người kèm={engine.ActiveGroundDuelDefenderId}, kiểu={engine.ActiveDefenderEngagement}, " +
+            $"vai trò={activeDefenderRole}, " +
+            $"hành động={engine.GetSnapshot().LastActionName}.");
     }
 
     private static void VerifyPlaybackSpeedDoesNotChangeFullMatch()

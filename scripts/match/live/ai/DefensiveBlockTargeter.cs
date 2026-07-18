@@ -43,8 +43,13 @@ public static class DefensiveBlockTargeter
     public static Vector2 CoverTarget(FootballWorldSnapshot world, StringName playerId, StringName teamId)
     {
         Vector2 shapeTarget = ShapeTarget(world, playerId, teamId);
-        Vector2 behindBall = world.BallPosition.Lerp(world.OwnGoal(teamId), 0.30f);
-        return LimitDisplacement(shapeTarget, shapeTarget.Lerp(behindBall, 0.38f), MaximumMarkingDisplacementMeters);
+        Vector2 ownGoal = world.OwnGoal(teamId);
+        float ballDistanceFromGoal = FootballPitchDimensions.DistanceMeters(world.BallPosition, ownGoal);
+        bool emergencyCover = ballDistanceFromGoal <= 18f;
+        Vector2 behindBall = world.BallPosition.Lerp(ownGoal, emergencyCover ? 0.42f : 0.30f);
+        float targetWeight = emergencyCover ? 0.72f : 0.38f;
+        float maximumDisplacement = emergencyCover ? 9f : MaximumMarkingDisplacementMeters;
+        return LimitDisplacement(shapeTarget, shapeTarget.Lerp(behindBall, targetWeight), maximumDisplacement);
     }
 
     public static Vector2 MarkTarget(

@@ -5,7 +5,7 @@ public sealed class TraditionalGoalkeeperPlanner
     private const float MaximumClaimDistanceMeters = 14f;
     private const float MinimumArrivalAdvantageMeters = 1.5f;
 
-    public Vector2 PositionTarget(FootballWorldSnapshot world, StringName teamId)
+    public Vector2 PositionTarget(FootballWorldSnapshot world, StringName goalkeeperId, StringName teamId)
     {
         Vector2 goal = world.OwnGoal(teamId);
         float direction = world.AttackDirection(teamId);
@@ -15,6 +15,14 @@ public sealed class TraditionalGoalkeeperPlanner
             return SpaceEvaluator.ClampToPitch(new Vector2(
                 goal.X + direction * (1.4f / FootballPitchDimensions.LengthMeters),
                 Mathf.Clamp(world.BallDestination.Y, 0.36f, 0.64f)));
+        }
+        if (ShouldRushControlledBall(world, goalkeeperId, teamId))
+        {
+            Vector2 ballMeters = FootballPitchDimensions.ToMeters(world.BallPosition);
+            Vector2 goalMeters = FootballPitchDimensions.ToMeters(goal);
+            Vector2 goalSideDirection = (goalMeters - ballMeters).Normalized();
+            Vector2 targetMeters = ballMeters + goalSideDirection * 1.35f;
+            return SpaceEvaluator.ClampToPitch(FootballPitchDimensions.ToNormalized(targetMeters));
         }
 
         float ballDistanceFromGoal = FootballPitchDimensions.DistanceMeters(goal, world.BallPosition);
@@ -33,6 +41,48 @@ public sealed class TraditionalGoalkeeperPlanner
         return SpaceEvaluator.ClampToPitch(new Vector2(
             goal.X + direction * (depthMeters / FootballPitchDimensions.LengthMeters),
             Mathf.Lerp(0.5f, claimingCross ? world.BallDestination.Y : world.BallPosition.Y, laneWeight)));
+    }
+
+    public bool ShouldRushControlledBall(
+        FootballWorldSnapshot world,
+        StringName goalkeeperId,
+        StringName teamId)
+    {
+        if (world.IsBallInFlight ||
+            world.IsLooseBall ||
+            world.PossessionTeamId == teamId ||
+            world.BallOwnerId == new StringName() ||
+            !world.Positions.TryGetValue(goalkeeperId, out Vector2 goalkeeperPosition) ||
+            !IsInsideOwnPenaltyArea(world.BallPosition, world.OwnGoal(teamId)))
+        {
+            return false;
+        }
+
+        float goalkeeperDistance = FootballPitchDimensions.DistanceMeters(goalkeeperPosition, world.BallPosition);
+        float ballDistanceFromGoal = FootballPitchDimensions.DistanceMeters(world.OwnGoal(teamId), world.BallPosition);
+        if (goalkeeperDistance > 12f || ballDistanceFromGoal > 14f)
+        {
+            return false;
+        }
+
+        float nearestOutfieldDefenderDistance = float.PositiveInfinity;
+        foreach (StringName playerId in world.Positions.Keys)
+        {
+            if (playerId == goalkeeperId ||
+                world.PlayerTeams[playerId] != teamId ||
+                world.PlayerRoles[playerId] == "GK")
+            {
+                continue;
+            }
+
+            nearestOutfieldDefenderDistance = Mathf.Min(
+                nearestOutfieldDefenderDistance,
+                FootballPitchDimensions.DistanceMeters(world.Positions[playerId], world.BallPosition));
+        }
+
+        bool immediateGoalThreat = ballDistanceFromGoal <= 8.5f;
+        bool goalkeeperArrivesFirst = goalkeeperDistance + 0.75f < nearestOutfieldDefenderDistance;
+        return immediateGoalThreat || goalkeeperArrivesFirst;
     }
 
     public bool ShouldUseBackPass(

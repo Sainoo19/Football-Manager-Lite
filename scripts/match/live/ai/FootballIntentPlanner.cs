@@ -161,8 +161,12 @@ public sealed class FootballIntentPlanner
         StringName teamId,
         LiveTeamPhase phase)
     {
-        Vector2 target = GoalkeeperPlanner.PositionTarget(world, teamId);
-        return new PlayerIntent(PlayerIntentKind.Goalkeep, target, phase, world.BallOwnerId);
+        bool rushesControlledBall = GoalkeeperPlanner.ShouldRushControlledBall(world, playerId, teamId);
+        Vector2 target = GoalkeeperPlanner.PositionTarget(world, playerId, teamId);
+        PlayerIntentKind intentKind = rushesControlledBall
+            ? PlayerIntentKind.CloseDownBall
+            : PlayerIntentKind.Goalkeep;
+        return new PlayerIntent(intentKind, target, phase, world.BallOwnerId);
     }
 
     internal static Vector2 ShiftBaseTowardBall(FootballWorldSnapshot world, StringName playerId, float weight)

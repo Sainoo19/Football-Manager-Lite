@@ -38,7 +38,10 @@ public sealed class GroundDuelSequenceState
     public void RecordEngagement(DefenderEngagementPlan engagement)
     {
         CurrentEngagement = engagement;
-        ExchangeCount++;
+        if (engagement.Type is not (DefenderEngagementType.CloseDown or DefenderEngagementType.Recover))
+        {
+            ExchangeCount++;
+        }
     }
 
     public void Reset()

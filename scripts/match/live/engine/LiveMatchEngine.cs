@@ -66,6 +66,7 @@ public sealed partial class LiveMatchEngine
     private readonly ThroughBallTargetPlanner _throughBallTargetPlanner = new();
     private readonly PassOptionEvaluator _passOptionEvaluator = new();
     private readonly BallCarrierDecisionEvaluator _ballCarrierDecisionEvaluator;
+    private readonly PressureReleaseDecisionEvaluator _pressureReleaseDecisionEvaluator = new();
     private readonly ClearanceTargetPlanner _clearanceTargetPlanner = new();
     private readonly DuelDistanceRules _duelDistanceRules = new();
     private readonly DribbleTouchPlanner _dribbleTouchPlanner = new();
@@ -191,6 +192,10 @@ public sealed partial class LiveMatchEngine
     public MatchScenarioKind? ActiveScenario { get; private set; }
     public DribbleTouchType? ActiveDribbleTouch => _state.GroundDuel.HasCarrier
         ? _state.GroundDuel.CurrentTouch.Type
+        : null;
+    internal StringName ActiveGroundDuelDefenderId => _state.GroundDuel.DefenderId;
+    internal DefenderEngagementType? ActiveDefenderEngagement => _state.GroundDuel.HasDefender
+        ? _state.GroundDuel.CurrentEngagement.Type
         : null;
 
     private bool _ballActionActive;

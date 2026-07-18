@@ -32,7 +32,9 @@ public readonly struct DefenderEngagementContext
         bool isInsideOwnPenaltyArea = false,
         float penaltyAreaChallengeProbability = 0.18f,
         bool hasYellowCard = false,
-        float bookedPlayerChallengeProbability = 1f)
+        float bookedPlayerChallengeProbability = 1f,
+        float distanceToOwnGoalMeters = float.PositiveInfinity,
+        bool isGoalkeeper = false)
     {
         DefenderPosition = defenderPosition;
         CarrierPosition = carrierPosition;
@@ -54,6 +56,8 @@ public readonly struct DefenderEngagementContext
         PenaltyAreaChallengeProbability = penaltyAreaChallengeProbability;
         HasYellowCard = hasYellowCard;
         BookedPlayerChallengeProbability = bookedPlayerChallengeProbability;
+        DistanceToOwnGoalMeters = distanceToOwnGoalMeters;
+        IsGoalkeeper = isGoalkeeper;
     }
 
     public Vector2 DefenderPosition { get; }
@@ -76,6 +80,8 @@ public readonly struct DefenderEngagementContext
     public float PenaltyAreaChallengeProbability { get; }
     public bool HasYellowCard { get; }
     public float BookedPlayerChallengeProbability { get; }
+    public float DistanceToOwnGoalMeters { get; }
+    public bool IsGoalkeeper { get; }
 }
 
 public readonly struct DefenderEngagementPlan
@@ -117,6 +123,21 @@ public sealed class DefenderEngagementPlanner
         {
             return DefenderEngagementType.Recover;
         }
+        if (context.IsGoalkeeper)
+        {
+            if (context.DistanceMeters > 2.2f)
+            {
+                return DefenderEngagementType.CloseDown;
+            }
+            if (context.DistanceMeters <= 1.45f)
+            {
+                return DefenderEngagementType.Tackle;
+            }
+
+            return context.ExchangeCount < 1
+                ? DefenderEngagementType.Jockey
+                : DefenderEngagementType.Tackle;
+        }
         if (context.DistanceMeters > 3.0f)
         {
             return DefenderEngagementType.CloseDown;
@@ -126,7 +147,7 @@ public sealed class DefenderEngagementPlanner
             return DefenderEngagementType.Jockey;
         }
         if (context.IsInsideOwnPenaltyArea &&
-            context.DecisionRoll >= context.PenaltyAreaChallengeProbability)
+            context.DecisionRoll >= PenaltyAreaChallengeChance(context))
         {
             return context.DistanceMeters <= 1.55f
                 ? DefenderEngagementType.Contain
@@ -160,6 +181,18 @@ public sealed class DefenderEngagementPlanner
         return context.DistanceMeters <= 1.55f
             ? DefenderEngagementType.Contain
             : DefenderEngagementType.Jockey;
+    }
+
+    private static float PenaltyAreaChallengeChance(DefenderEngagementContext context)
+    {
+        float dangerBonus = Mathf.Clamp((14f - context.DistanceToOwnGoalMeters) / 14f, 0f, 1f) * 0.08f;
+        float touchBonus = context.TouchType == DribbleTouchType.KnockOn ? 0.14f : 0f;
+        float coverBonus = context.HasCover ? 0.04f : 0f;
+        float patienceBonus = context.ExchangeCount >= 2 ? 0.04f : 0f;
+        return Mathf.Clamp(
+            context.PenaltyAreaChallengeProbability + dangerBonus + touchBonus + coverBonus + patienceBonus,
+            context.PenaltyAreaChallengeProbability,
+            0.28f);
     }
 
     private static Vector2 GoalSideTarget(DefenderEngagementContext context, float distanceMeters)

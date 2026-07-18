@@ -38,6 +38,10 @@ public sealed partial class LiveMatchEngine
         }
         if (sequence.ExchangeCount >= _configuration.MaximumUnresolvedGroundDuelExchanges)
         {
+            if (TryFinishDangerousGroundDuel(carrierId, distanceMeters))
+            {
+                return true;
+            }
             sequence.Reset();
             StringName outletId = ChoosePassTarget(true);
             if (outletId != new StringName())
@@ -49,6 +53,10 @@ public sealed partial class LiveMatchEngine
         }
 
         FootballPlayer? defender = GetPlayer(nearestDefenderId);
+        bool defenderIsGoalkeeper = _playerRoles[nearestDefenderId] == "GK";
+        int defenderChallengeSkill = defenderIsGoalkeeper
+            ? defender?.goalkeeping ?? 50
+            : defender?.tackling ?? 50;
         float carrierSpeed = PlayerSpeed(carrierId);
         float defenderSpeed = PlayerSpeed(nearestDefenderId);
         bool challengeOnCooldown =
@@ -62,7 +70,7 @@ public sealed partial class LiveMatchEngine
                 distanceMeters,
                 sequence.CurrentTouch.Type,
                 sequence.ExchangeCount,
-                defender?.tackling ?? 50,
+                defenderChallengeSkill,
                 defender?.positioning ?? 50,
                 defender?.Strength ?? 50,
                 defender?.Balance ?? 50,
@@ -75,10 +83,15 @@ public sealed partial class LiveMatchEngine
                 IsInsideOwnPenaltyArea(CurrentPositions[nearestDefenderId], _playerTeams[nearestDefenderId]),
                 _configuration.PenaltyAreaChallengeProbability,
                 Simulation?.get_state(_playerTeams[nearestDefenderId])?.YellowCardCount(nearestDefenderId) > 0,
-                _configuration.BookedPlayerChallengeProbability));
+                _configuration.BookedPlayerChallengeProbability,
+                FootballPitchDimensions.DistanceMeters(
+                    CurrentPositions[carrierId],
+                    new Vector2(OwnGoalX(_playerTeams[nearestDefenderId]), 0.5f)),
+                defenderIsGoalkeeper));
         sequence.RecordEngagement(engagement);
         GroundDuelExchanges++;
-        if (engagement.AttemptsChallenge && sequence.TouchCount >= 2)
+        int requiredTouchesBeforeChallenge = defenderIsGoalkeeper ? 1 : 2;
+        if (engagement.AttemptsChallenge && sequence.TouchCount >= requiredTouchesBeforeChallenge)
         {
             ResolveGroundDuelChallenge(carrierId, nearestDefenderId, distanceMeters, engagement);
             return true;
@@ -170,8 +183,12 @@ public sealed partial class LiveMatchEngine
         GroundDuelSequenceState sequence = _state.GroundDuel;
         FootballPlayer? carrier = GetPlayer(carrierId);
         FootballPlayer? defender = GetPlayer(defenderId);
+        bool defenderIsGoalkeeper = _playerRoles[defenderId] == "GK";
+        int defenderChallengeSkill = defenderIsGoalkeeper
+            ? defender?.goalkeeping ?? 50
+            : defender?.tackling ?? 50;
         float attackDirection = AttackDirection(_playerTeams[carrierId]);
-        bool challengeFromBehind = attackDirection *
+        bool challengeFromBehind = !defenderIsGoalkeeper && attackDirection *
             (CurrentPositions[defenderId].X - CurrentPositions[carrierId].X) < 0f;
         GroundDuelResolution resolution = _groundDuelResolver.Resolve(
             new GroundDuelContext(
@@ -182,7 +199,7 @@ public sealed partial class LiveMatchEngine
                 carrier?.Strength ?? 50,
                 carrier?.Balance ?? 50,
                 carrier?.Agility ?? 50,
-                defender?.tackling ?? 50,
+                defenderChallengeSkill,
                 defender?.positioning ?? 50,
                 defender?.Strength ?? 50,
                 defender?.Balance ?? 50,
@@ -193,8 +210,14 @@ public sealed partial class LiveMatchEngine
                 challengeFromBehind,
                 DecisionRoll(defenderId, carrierId, _decisionSerial + 631),
                 DecisionRoll(carrierId, defenderId, _decisionSerial + 647),
-                DecisionRoll(defenderId, carrierId, _decisionSerial + 661)));
-        if (engagement.Type == DefenderEngagementType.Tackle)
+                defenderIsGoalkeeper
+                    ? 1f
+                    : DecisionRoll(defenderId, carrierId, _decisionSerial + 661)));
+        if (defenderIsGoalkeeper)
+        {
+            _state.DefenderChallengeReadyTimes[defenderId] = _state.VisualTime + 0.70f;
+        }
+        else if (engagement.Type == DefenderEngagementType.Tackle)
         {
             TackleAttempts++;
             _state.DefenderChallengeReadyTimes[defenderId] = _state.VisualTime + 1.20f;
@@ -206,6 +229,13 @@ public sealed partial class LiveMatchEngine
         }
         Dribbles++;
 
+        if (defenderIsGoalkeeper && resolution.Outcome == GroundDuelOutcome.CarrierRetains)
+        {
+            CompleteHeavyContactLooseBall(carrierId, defenderId, 3.2f);
+            SetAction($"{PlayerName(defenderId)} lao ra khép góc — bóng bật khỏi chân {PlayerName(carrierId)}");
+            return;
+        }
+
         switch (resolution.Outcome)
         {
             case GroundDuelOutcome.Foul:
@@ -213,7 +243,7 @@ public sealed partial class LiveMatchEngine
                 ResolveLiveFoul(defenderId, carrierId, distanceMeters);
                 return;
             case GroundDuelOutcome.DefenderWins:
-                CompleteDefenderWin(carrierId, defenderId);
+                CompleteDefenderWin(carrierId, defenderId, defenderIsGoalkeeper);
                 return;
             case GroundDuelOutcome.LooseBall:
                 CompleteHeavyContactLooseBall(carrierId, defenderId, resolution.LooseBallSpeedMetersPerSecond);
@@ -235,7 +265,31 @@ public sealed partial class LiveMatchEngine
         }
     }
 
-    private void CompleteDefenderWin(StringName carrierId, StringName defenderId)
+    private bool TryFinishDangerousGroundDuel(StringName carrierId, float pressureDistanceMeters)
+    {
+        if (Simulation?.use_live_pitch_events != true ||
+            _playerRoles[carrierId] is not ("ST" or "LW" or "RW" or "AM"))
+        {
+            return false;
+        }
+
+        Vector2 attackingGoal = new(AttackingGoalX(_playerTeams[carrierId]), 0.5f);
+        float distanceToGoalMeters = FootballPitchDimensions.DistanceMeters(
+            CurrentPositions[carrierId],
+            attackingGoal);
+        if (distanceToGoalMeters > 13.5f)
+        {
+            return false;
+        }
+
+        StartLiveShot(carrierId, pressureDistanceMeters);
+        return true;
+    }
+
+    private void CompleteDefenderWin(
+        StringName carrierId,
+        StringName defenderId,
+        bool defenderIsGoalkeeper = false)
     {
         _state.GroundDuel.Reset();
         _carryOwnerId = new StringName();
@@ -244,11 +298,16 @@ public sealed partial class LiveMatchEngine
         SetTrackedPossession(_playerTeams[defenderId]);
         _attackProgress = Mathf.Clamp(AttackProgress(_state.ActiveTeamId, BallPosition), 0.16f, 0.62f);
         _phaseLane = CurrentPositions[defenderId].Y;
-        Interceptions++;
-        TacklesWon++;
+        if (!defenderIsGoalkeeper)
+        {
+            Interceptions++;
+            TacklesWon++;
+        }
         SelectPhasePlayers();
         _nextDecisionTime = _state.VisualTime + 0.42f;
-        SetAction($"{PlayerName(defenderId)} canh đúng nhịp và lấy bóng từ {PlayerName(carrierId)}");
+        SetAction(defenderIsGoalkeeper
+            ? $"{PlayerName(defenderId)} lao ra khép góc và ôm gọn bóng"
+            : $"{PlayerName(defenderId)} canh đúng nhịp và lấy bóng từ {PlayerName(carrierId)}");
     }
 
     private void CompleteHeavyContactLooseBall(

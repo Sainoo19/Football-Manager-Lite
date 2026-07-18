@@ -26,6 +26,27 @@ public sealed partial class LiveMatchEngine
         float pressureDistanceMeters = nearestOpponent != new StringName()
             ? FootballPitchDimensions.DistanceMeters(CurrentPositions[ownerId], CurrentPositions[nearestOpponent])
             : float.PositiveInfinity;
+        bool underPressure = _duelDistanceRules.IsUnderPressure(pressureDistanceMeters);
+        FootballPlayer? owner = GetPlayer(ownerId);
+        PassSelection pressuredOutlet = underPressure
+            ? ChoosePassSelection(preferSafe: true)
+            : default;
+        if (pressuredOutlet.HasTarget &&
+            _pressureReleaseDecisionEvaluator.ShouldRelease(
+                new PressureReleaseContext(
+                    underPressure,
+                    _state.GroundDuel.TouchCount,
+                    _state.GroundDuel.ExchangeCount,
+                    owner?.passing ?? 50,
+                    owner?.vision ?? 50,
+                    owner?.Composure ?? 50,
+                    owner?.dribbling ?? 50,
+                    pressuredOutlet,
+                    DecisionRoll(ownerId, pressuredOutlet.ReceiverId, _decisionSerial + 719))))
+        {
+            StartPass(pressuredOutlet.ReceiverId, BallActionKind.Pass);
+            return;
+        }
         if (TryAdvanceGroundDuel(ownerId, nearestOpponent, pressureDistanceMeters))
             return;
 
@@ -34,8 +55,6 @@ public sealed partial class LiveMatchEngine
         if (TryResolveFinalThirdAction(ownerId, pressureDistanceMeters))
             return;
 
-        FootballPlayer? owner = GetPlayer(ownerId);
-        bool underPressure = _duelDistanceRules.IsUnderPressure(pressureDistanceMeters);
         StringName goalkeeperSupport = ChooseGoalkeeperBackPass(ownerId, underPressure);
         if (goalkeeperSupport != new StringName())
         {
@@ -61,7 +80,9 @@ public sealed partial class LiveMatchEngine
             StartLiveShot(ownerId, pressureDistanceMeters);
             return;
         }
-        PassSelection pass = ChoosePassSelection(underPressure);
+        PassSelection pass = underPressure
+            ? pressuredOutlet
+            : ChoosePassSelection(preferSafe: false);
         float dribbleIntent = DecisionRoll(ownerId, nearestOpponent, _decisionSerial);
         int dribbling = owner?.dribbling ?? 50;
         if (_ballCarrierDecisionEvaluator.ShouldKeepCarrying(

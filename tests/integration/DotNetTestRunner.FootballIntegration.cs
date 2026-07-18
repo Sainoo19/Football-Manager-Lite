@@ -30,6 +30,8 @@ public partial class DotNetTestRunner : Node
             TestPitchPauseAndReset();
             TestPlaybackSpeedDoesNotChangeFootball();
             TestKickoffGoalResetAndHalfTimeSides();
+            PressureReleaseDecisionEvaluatorTests.Run();
+            PressureReleaseScenarioIntegrationTests.Run();
             GroundDuelTests.Run();
             GroundDuelScenarioIntegrationTests.Run();
             AerialBallTests.Run();
@@ -624,6 +626,33 @@ public partial class DotNetTestRunner : Node
         Check(
             !goalkeeperPlanner.ShouldUseBackPass("ST", 0.24f, true, 18f, 0.25f, 0.20f),
             "Tiền đạo không được dùng đường chuyền về thủ môn như hành vi mặc định.");
+
+        positions[shooterId] = new Vector2(0.11f, 0.50f);
+        FootballWorldSnapshot controlledBreakawayWorld = new(
+            positions,
+            basePositions,
+            playerTeams,
+            roles,
+            positions[shooterId],
+            positions[shooterId],
+            shooterId,
+            new StringName(),
+            homeTeamId,
+            homeTeamId,
+            false,
+            false,
+            true);
+        PlayerIntent rushingGoalkeeperIntent = FootballIntentPlanner.GoalkeeperIntent(
+            controlledBreakawayWorld,
+            goalkeeperId,
+            awayTeamId,
+            LiveTeamPhase.Defending);
+        Check(
+            goalkeeperPlanner.ShouldRushControlledBall(controlledBreakawayWorld, goalkeeperId, awayTeamId) &&
+            rushingGoalkeeperIntent.Kind == PlayerIntentKind.CloseDownBall &&
+            rushingGoalkeeperIntent.Target.X > positions[goalkeeperId].X &&
+            rushingGoalkeeperIntent.Target.X < positions[shooterId].X,
+            "Tiền đạo kiểm soát bóng sát khung thành phải khiến thủ môn lao ra khép góc từ phía cầu môn.");
 
         GD.Print("PASS: giới hạn sút xa, kết quả sút đa dạng và thủ môn truyền thống tham gia trận đấu.");
     }
