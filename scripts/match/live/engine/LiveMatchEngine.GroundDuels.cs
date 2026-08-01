@@ -190,7 +190,7 @@ public sealed partial class LiveMatchEngine
         float attackDirection = AttackDirection(_playerTeams[carrierId]);
         bool challengeFromBehind = !defenderIsGoalkeeper && attackDirection *
             (CurrentPositions[defenderId].X - CurrentPositions[carrierId].X) < 0f;
-        GroundDuelResolution resolution = _groundDuelResolver.Resolve(
+        GroundDuelResolution resolution = _ballContestCoordinator.ResolveGroundDuel(
             new GroundDuelContext(
                 engagement.Type,
                 sequence.CurrentTouch,
@@ -296,6 +296,11 @@ public sealed partial class LiveMatchEngine
         _consecutiveCarries = 0;
         _state.BallOwnerId = defenderId;
         SetTrackedPossession(_playerTeams[defenderId]);
+        _state.PossessionSequence.ObserveOwner(
+            _playerTeams[defenderId],
+            defenderId,
+            CurrentPositions[defenderId],
+            _state.VisualTime);
         _attackProgress = Mathf.Clamp(AttackProgress(_state.ActiveTeamId, BallPosition), 0.16f, 0.62f);
         _phaseLane = CurrentPositions[defenderId].Y;
         if (!defenderIsGoalkeeper)
@@ -325,6 +330,28 @@ public sealed partial class LiveMatchEngine
         StartLooseBall(
             $"{PlayerName(defenderId)} va chạm mạnh — bóng bật khỏi chân {PlayerName(carrierId)}",
             direction * looseBallSpeedMetersPerSecond);
+    }
+
+    private void ResolveStalledPossessionContest(StringName carrierId, StringName defenderId)
+    {
+        Vector2 direction = new(AttackDirection(_playerTeams[carrierId]), 0f);
+        if (defenderId != new StringName() && CurrentPositions.ContainsKey(defenderId))
+        {
+            Vector2 carrierMeters = FootballPitchDimensions.ToMeters(CurrentPositions[carrierId]);
+            Vector2 defenderMeters = FootballPitchDimensions.ToMeters(CurrentPositions[defenderId]);
+            Vector2 awayFromDefender = carrierMeters - defenderMeters;
+            if (awayFromDefender.LengthSquared() > 0.01f)
+            {
+                direction = (awayFromDefender.Normalized() + direction * 0.35f).Normalized();
+            }
+        }
+
+        GroundDuelLooseBalls++;
+        StartLooseBall(
+            defenderId == new StringName()
+                ? $"{PlayerName(carrierId)} chạm bóng quá dài — hai đội tranh bóng tự do"
+                : $"{PlayerName(defenderId)} duy trì áp lực và chọc bóng khỏi chân {PlayerName(carrierId)}",
+            direction * 3.4f);
     }
 
     private void ApplyGroundDuelTargets()

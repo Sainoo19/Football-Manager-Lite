@@ -66,6 +66,12 @@ public sealed partial class LiveMatchEngine
         _runtime.SetPhase(LiveMatchPhase.InPossession);
         _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
         SetTrackedPossession(_playerTeams[playerId]);
+        _state.PossessionSequence.ObserveOwner(
+            _playerTeams[playerId],
+            playerId,
+            CurrentPositions[playerId],
+            _state.VisualTime);
+        UpdatePossessionDiagnostics();
         _attackProgress = Mathf.Clamp(AttackProgress(_state.ActiveTeamId, CurrentPositions[playerId]), 0.10f, 0.72f);
         _phaseLane = CurrentPositions[playerId].Y;
         SelectPhasePlayers();
@@ -83,6 +89,7 @@ public sealed partial class LiveMatchEngine
         ApplyPendingCardsAtStoppage();
         ResetCarrySequence();
         ClearDirectAttack();
+        _state.PossessionSequence.Reset();
         SuspendTrackedPossession();
         if (restartType == "kickoff")
             ResetPlayersForKickoff(teamId);
@@ -130,13 +137,9 @@ public sealed partial class LiveMatchEngine
         {
             BallPosition = _state.RestartPosition;
         }
-        float preparationDuration = restartType.ToString() switch
-        {
-            "goal_kick" => GoalKickRestartPlanner.PreparationDurationSeconds,
-            "free_kick" => _freeKickRestartPlan.PreparationDurationSeconds,
-            "penalty" => PenaltyRestartPlanner.PreparationDurationSeconds,
-            _ => 0.46f
-        };
+        float preparationDuration = _restartCoordinator.PreparationDuration(
+            restartType,
+            _freeKickRestartPlan);
         _state.RestartExecuteTime = _state.VisualTime + preparationDuration;
         FootballMatchEvent? restartEvent = Simulation.register_live_restart(teamId, restartType);
         if (restartEvent is not null)
@@ -279,7 +282,7 @@ public sealed partial class LiveMatchEngine
     {
         float kickingGoalX = OwnGoalX(_state.RestartTeamId);
         _playerIntents.Clear();
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             bool isKickingTeam = _playerTeams[playerId] == _state.RestartTeamId;
             Vector2 target = _goalKickRestartPlanner.PositionTarget(
@@ -304,7 +307,7 @@ public sealed partial class LiveMatchEngine
         }
 
         _playerIntents.Clear();
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             bool isRestartingTeam = _playerTeams[playerId] == _state.RestartTeamId;
             Vector2 target = CurrentPositions[playerId];
@@ -341,7 +344,7 @@ public sealed partial class LiveMatchEngine
         StringName goalkeeperId = ChooseGoalkeeper(defendingTeamId);
         float defendingGoalX = OwnGoalX(defendingTeamId);
         _playerIntents.Clear();
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             Vector2 target;
             if (playerId == _state.RestartTakerId)
@@ -520,7 +523,7 @@ public sealed partial class LiveMatchEngine
         }
 
         float kickingGoalX = OwnGoalX(_state.RestartTeamId);
-        foreach (StringName playerId in CurrentPositions.Keys.ToList())
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (_playerTeams[playerId] != _state.RestartTeamId)
             {
@@ -615,7 +618,7 @@ public sealed partial class LiveMatchEngine
         _state.IsRestartBallPlaced = true;
         BallPosition = new Vector2(0.5f, 0.5f);
 
-        foreach (StringName playerId in CurrentPositions.Keys.ToList())
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             Vector2 basePosition = BasePositions[playerId];
             bool ownsLeftHalf = OwnGoalX(_playerTeams[playerId]) < 0.5f;

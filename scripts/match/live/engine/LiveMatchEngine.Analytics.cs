@@ -2,6 +2,19 @@ using Godot;
 
 public sealed partial class LiveMatchEngine
 {
+    private void UpdatePossessionDiagnostics()
+    {
+        MaximumObservedOwnerHoldSeconds = Mathf.Max(
+            MaximumObservedOwnerHoldSeconds,
+            _state.PossessionSequence.OwnerHeldSeconds);
+        MaximumObservedDuelPairSeconds = Mathf.Max(
+            MaximumObservedDuelPairSeconds,
+            _state.PossessionSequence.DuelPairSeconds);
+        MaximumPossessionParticipants = Mathf.Max(
+            MaximumPossessionParticipants,
+            _state.PossessionSequence.ParticipantCount);
+    }
+
     private void ResetLiveAnalytics()
     {
         _possessionTeamId = new StringName();
@@ -118,6 +131,7 @@ public sealed partial class LiveMatchEngine
             ThrowInsTaken,
             FreeKicksTaken,
             PenaltiesTaken,
+            _footballActionCoordinator.Metrics,
             _goalRecords);
     }
 }

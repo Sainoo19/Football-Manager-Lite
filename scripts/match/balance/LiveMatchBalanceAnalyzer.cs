@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -54,6 +55,8 @@ public sealed class LiveMatchBalanceAnalyzer
             analytics.AveragePossessionSpellSeconds,
             analytics.PossessionChanges,
             CreateEventSequenceSignature(simulation),
+            CreateFinalSnapshotSignature(snapshot),
+            analytics.ActionMetrics,
             goalRecords);
     }
 
@@ -194,6 +197,7 @@ public sealed class LiveMatchBalanceAnalyzer
     public bool AreEquivalent(LiveMatchBalanceRecord first, LiveMatchBalanceRecord second)
     {
         return first.EventSequenceSignature == second.EventSequenceSignature &&
+               first.FinalSnapshotSignature == second.FinalSnapshotSignature &&
                first.GetMetricValues().All(pair =>
                    second.GetMetricValues().TryGetValue(pair.Key, out double value) &&
                    Math.Abs(pair.Value - value) < 0.000001d) &&
@@ -225,5 +229,42 @@ public sealed class LiveMatchBalanceAnalyzer
         }
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexString(hash);
+    }
+
+    private static string CreateFinalSnapshotSignature(LiveMatchSnapshot snapshot)
+    {
+        StringBuilder builder = new();
+        builder.Append(snapshot.Phase)
+            .Append('|').Append(QuantizeForSignature(snapshot.ElapsedGameSeconds))
+            .Append('|').Append(snapshot.BallOwnerId)
+            .Append('|').Append(snapshot.ActiveTeamId)
+            .Append('|').Append(snapshot.PendingRestartType)
+            .Append('|').Append(snapshot.IsPlaying)
+            .Append('|').Append(snapshot.IsBallInFlight)
+            .Append('|').Append(snapshot.IsLooseBall)
+            .Append('|').Append(QuantizeForSignature(snapshot.BallPosition.X))
+            .Append(',').Append(QuantizeForSignature(snapshot.BallPosition.Y))
+            .Append('|').Append(snapshot.LastActionName);
+
+        foreach (StringName playerId in snapshot.Positions.Keys
+                     .OrderBy(id => id.ToString(), StringComparer.Ordinal))
+        {
+            Vector2 position = snapshot.Positions[playerId];
+            Vector2 target = snapshot.TargetPositions[playerId];
+            builder.Append('|').Append(playerId)
+                .Append(':').Append(QuantizeForSignature(position.X))
+                .Append(',').Append(QuantizeForSignature(position.Y))
+                .Append('>').Append(QuantizeForSignature(target.X))
+                .Append(',').Append(QuantizeForSignature(target.Y));
+        }
+
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
+        return Convert.ToHexString(hash);
+    }
+
+    private static string QuantizeForSignature(double value)
+    {
+        return Math.Round(value, 6, MidpointRounding.AwayFromZero)
+            .ToString("F6", CultureInfo.InvariantCulture);
     }
 }

@@ -62,6 +62,9 @@ public sealed class BalanceReportWriter
         var document = new
         {
             generated_at_utc = DateTimeOffset.UtcNow,
+            engine_version = LiveMatchEngineIdentity.EngineVersion,
+            configuration_fingerprint = LiveMatchEngineIdentity.ConfigurationFingerprint(
+                LiveMatchEngineConfiguration.CreateFootballFundamentalsV1()),
             summary.RequestedMatchCount,
             summary.CompletedMatchCount,
             summary.UniqueEventSequences,
@@ -69,6 +72,7 @@ public sealed class BalanceReportWriter
             metric_averages = summary.MetricAverages,
             goals_by_distance = summary.GoalsByDistance,
             goals_by_situation = summary.GoalsBySituation,
+            action_reason_counts = summary.ActionReasonCounts,
             thresholds = configuration.MetricRanges.Values.Select(range => new
             {
                 range.Key,
@@ -96,7 +100,10 @@ public sealed class BalanceReportWriter
             "pass_attempts,completed_passes,pass_completion,dribbles,successful_dribbles,ground_duel_wins," +
             "ground_duel_exchanges,aerial_duels,headers_won,fouls,yellow_cards,red_cards," +
             "offsides,penalties,corners,goal_kicks,throw_ins,free_kicks," +
-            "average_possession_spell_seconds,possession_changes,event_sequence_signature");
+            "average_possession_spell_seconds,possession_changes,action_decisions,action_score_margin," +
+            "backward_passes,sideways_passes,forward_passes,progressive_action_rate,forced_actions," +
+            "decision_cancellations,no_valid_actions,event_sequence_signature," +
+            "final_snapshot_signature");
         foreach (LiveMatchBalanceRecord record in records)
         {
             csv.Append(record.MatchIndex).Append(',')
@@ -127,7 +134,17 @@ public sealed class BalanceReportWriter
                 .Append(record.FreeKicks).Append(',')
                 .Append(Format(record.AveragePossessionSpellSeconds)).Append(',')
                 .Append(record.PossessionChanges).Append(',')
-                .Append(record.EventSequenceSignature)
+                .Append(record.ActionMetrics.Decisions).Append(',')
+                .Append(Format(record.ActionMetrics.AverageScoreMargin)).Append(',')
+                .Append(record.ActionMetrics.BackwardPasses).Append(',')
+                .Append(record.ActionMetrics.SidewaysPasses).Append(',')
+                .Append(record.ActionMetrics.ForwardPasses).Append(',')
+                .Append(Format(record.ActionMetrics.ProgressiveActionRate)).Append(',')
+                .Append(record.ActionMetrics.ForcedActions).Append(',')
+                .Append(record.ActionMetrics.DecisionCancellations).Append(',')
+                .Append(record.ActionMetrics.NoValidActions).Append(',')
+                .Append(record.EventSequenceSignature).Append(',')
+                .Append(record.FinalSnapshotSignature)
                 .AppendLine();
         }
         File.WriteAllText(Path.Combine(outputDirectory, "matches.csv"), csv.ToString(), Encoding.UTF8);
@@ -184,6 +201,9 @@ public sealed class BalanceReportWriter
         StringBuilder report = new();
         report.AppendLine("# Football Fundamentals Engine v1 — Batch balance report")
             .AppendLine()
+            .AppendLine($"- Engine version: `{LiveMatchEngineIdentity.EngineVersion}`")
+            .AppendLine($"- Configuration fingerprint: `" +
+                        $"{LiveMatchEngineIdentity.ConfigurationFingerprint(LiveMatchEngineConfiguration.CreateFootballFundamentalsV1())}`")
             .AppendLine($"- Hoàn tất: {summary.CompletedMatchCount}/{summary.RequestedMatchCount} trận")
             .AppendLine($"- Chuỗi diễn biến độc nhất: {summary.UniqueEventSequences} " +
                         $"({summary.UniqueEventSequenceRatio:P1})")
@@ -202,6 +222,43 @@ public sealed class BalanceReportWriter
                 .Append(" | ").Append(Format(range.Minimum)).Append("–").Append(Format(range.Maximum))
                 .Append(" | ").Append(range.Contains(value) ? "PASS" : "REVIEW")
                 .AppendLine(" |");
+        }
+
+        report.AppendLine()
+            .AppendLine("## M1 action selection")
+            .AppendLine()
+            .AppendLine("| Metric | Trung bình / trận |")
+            .AppendLine("|---|---:|");
+        foreach (FootballActionType actionType in Enum.GetValues<FootballActionType>())
+        {
+            string key = $"action_{actionType.ToString().ToLowerInvariant()}";
+            report.Append("| ").Append(actionType)
+                .Append(" | ").Append(Format(summary.MetricAverages.GetValueOrDefault(key)))
+                .AppendLine(" |");
+        }
+        report.Append("| Score margin | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("action_score_margin")))
+            .AppendLine(" |")
+            .Append("| Progressive action rate | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("progressive_action_rate")))
+            .AppendLine(" |")
+            .Append("| Forced actions | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("forced_actions")))
+            .AppendLine(" |")
+            .Append("| Decision cancellations | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("decision_cancellations")))
+            .AppendLine(" |")
+            .Append("| No-valid actions | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("no_valid_actions")))
+            .AppendLine(" |")
+            .AppendLine()
+            .AppendLine("### Decision reasons")
+            .AppendLine();
+        foreach ((string reason, int count) in summary.ActionReasonCounts
+                     .OrderByDescending(pair => pair.Value)
+                     .ThenBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            report.Append("- ").Append(reason).Append(": ").Append(count).AppendLine();
         }
 
         report.AppendLine()

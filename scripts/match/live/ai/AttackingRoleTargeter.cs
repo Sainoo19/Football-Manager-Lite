@@ -5,6 +5,15 @@ public static class AttackingRoleTargeter
     private const float FinalThirdStart = 0.66f;
     private const float WideLaneStart = 0.78f;
     private const float WideLaneEnd = 0.22f;
+    private static readonly Vector2[] SupportOffsetsMeters =
+    {
+        new(-6f, -8f),
+        new(-6f, 8f),
+        new(2f, -10f),
+        new(2f, 10f),
+        new(-12f, 0f),
+        new(6f, 0f)
+    };
 
     public static Vector2 CarrierTarget(FootballWorldSnapshot world, StringName playerId, StringName teamId)
     {
@@ -55,24 +64,60 @@ public static class AttackingRoleTargeter
         int supportIndex)
     {
         float direction = world.AttackDirection(teamId);
-        float baseLane = world.BasePositions[playerId].Y;
-        float[] distancesBehindBallMeters = { 7f, 11f, 15f };
-        float targetX = world.BallPosition.X - direction *
-            (distancesBehindBallMeters[supportIndex % 3] / FootballPitchDimensions.LengthMeters);
-        float upperSupportLane = world.BallPosition.Y - 7f / FootballPitchDimensions.WidthMeters;
-        float lowerSupportLane = world.BallPosition.Y + 7f / FootballPitchDimensions.WidthMeters;
-        float targetY = supportIndex % 3 switch
+        Vector2 ballMeters = FootballPitchDimensions.ToMeters(world.BallPosition);
+        Vector2 bestTarget = world.Positions[playerId];
+        float bestScore = float.NegativeInfinity;
+        for (int index = 0; index < SupportOffsetsMeters.Length; index++)
         {
-            0 => upperSupportLane,
-            1 => lowerSupportLane,
-            _ => Mathf.Lerp(baseLane, 0.5f, 0.12f)
-        };
-        targetY = RoleLaneRules.ConstrainAttackingLane(
-            world.PlayerRoles[playerId],
-            targetY,
-            false,
-            direction);
-        return SpaceEvaluator.ClampToPitch(new Vector2(targetX, targetY));
+            int rotatedIndex = (index + supportIndex * 2) % SupportOffsetsMeters.Length;
+            Vector2 offset = SupportOffsetsMeters[rotatedIndex];
+            Vector2 candidateMeters = ballMeters + new Vector2(direction * offset.X, offset.Y);
+            Vector2 candidate = SpaceEvaluator.ClampToPitch(
+                FootballPitchDimensions.ToNormalized(candidateMeters));
+            candidate.Y = RoleLaneRules.ConstrainAttackingLane(
+                world.PlayerRoles[playerId],
+                candidate.Y,
+                false,
+                direction);
+
+            float receiverSpaceMeters = SpaceEvaluator.NearestOpponentDistanceMeters(
+                candidate,
+                teamId,
+                world.Positions,
+                world.PlayerTeams);
+            float laneRisk = SpaceEvaluator.PassingLaneRisk(
+                world.BallPosition,
+                candidate,
+                teamId,
+                world.Positions,
+                world.PlayerTeams);
+            float travelDistanceMeters = FootballPitchDimensions.DistanceMeters(
+                world.Positions[playerId],
+                candidate);
+            float passDistanceMeters = FootballPitchDimensions.DistanceMeters(
+                world.BallPosition,
+                candidate);
+            float roleProgressBonus = SupportProgressBonus(
+                world.PlayerRoles[playerId],
+                offset.X);
+            float preferredOffsetBonus = index == 0 ? 0.10f : 0f;
+            float score = Mathf.Clamp(receiverSpaceMeters / 9f, 0f, 1f) * 0.52f -
+                          laneRisk * 0.42f -
+                          Mathf.Clamp(travelDistanceMeters / 30f, 0f, 1f) * 0.18f +
+                          roleProgressBonus +
+                          preferredOffsetBonus;
+            if (passDistanceMeters < 4.5f)
+            {
+                score -= 0.35f;
+            }
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestTarget = candidate;
+            }
+        }
+
+        return bestTarget;
     }
 
     public static Vector2 RunnerTarget(FootballWorldSnapshot world, StringName playerId, StringName teamId)
@@ -171,6 +216,21 @@ public static class AttackingRoleTargeter
     private static float FinalThirdX(string role) => role is "CM" or "AM" ? 0.80f : 0.89f;
 
     private static bool IsWide(float lane) => lane <= WideLaneEnd || lane >= WideLaneStart;
+
+    private static float SupportProgressBonus(string role, float forwardOffsetMeters)
+    {
+        bool attackingMidfielder = role is "AM" or "CM";
+        bool defensiveSupport = role is "CB" or "LB" or "RB" or "DM";
+        if (attackingMidfielder && forwardOffsetMeters > 0f)
+        {
+            return 0.14f;
+        }
+        if (defensiveSupport && forwardOffsetMeters <= 0f)
+        {
+            return 0.10f;
+        }
+        return 0f;
+    }
 
     private static float CornerPenalty(Vector2 point)
     {

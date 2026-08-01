@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Godot;
 
@@ -59,7 +60,10 @@ public sealed class KickoffRestartPlanner
         StringName bestId = new();
         int bestPriority = int.MaxValue;
         float bestCenterDistance = float.PositiveInfinity;
-        foreach (StringName playerId in positions.Keys)
+        List<StringName> orderedPlayerIds = new(positions.Keys);
+        orderedPlayerIds.Sort((first, second) =>
+            StringComparer.Ordinal.Compare(first.ToString(), second.ToString()));
+        foreach (StringName playerId in orderedPlayerIds)
         {
             if (playerId == excludedId ||
                 playerTeams[playerId] != teamId ||

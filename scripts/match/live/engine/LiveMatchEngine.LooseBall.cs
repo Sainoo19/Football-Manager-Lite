@@ -9,6 +9,7 @@ public sealed partial class LiveMatchEngine
     {
         ClearDirectAttack();
         ResetCarrySequence();
+        _state.PossessionSequence.Reset();
         SuspendTrackedPossession();
         _state.IsBallVisible = true;
         _state.BallOwnerId = new StringName();
@@ -60,7 +61,7 @@ public sealed partial class LiveMatchEngine
 
     private StringName FindClaimingGoalkeeper()
     {
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (_playerRoles[playerId] != "GK")
             {

@@ -3,25 +3,6 @@ using Godot;
 
 public sealed partial class LiveMatchEngine
 {
-    private bool ShouldShoot(StringName shooterId, float pressureDistanceMeters)
-    {
-        if (Simulation is null)
-        {
-            return false;
-        }
-
-        FootballPlayer? shooter = GetPlayer(shooterId);
-        Vector2 shooterPosition = CurrentPositions[shooterId];
-        Vector2 goalCenter = new(AttackingGoalX(_playerTeams[shooterId]), 0.5f);
-        float distanceMeters = FootballPitchDimensions.DistanceMeters(shooterPosition, goalCenter);
-        return _shotDecisionEvaluator.ShouldShoot(
-            _playerRoles[shooterId],
-            shooter?.finishing ?? 50,
-            distanceMeters,
-            pressureDistanceMeters,
-            _decisionsSinceShot,
-            DecisionRoll(shooterId, _pressingPlayerId, _decisionSerial + 73));
-    }
 
     private void StartLiveShot(
         StringName shooterId,

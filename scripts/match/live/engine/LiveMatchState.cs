@@ -48,6 +48,7 @@ internal sealed class LiveMatchState
     public bool IsRestartBallPlaced { get; set; } = true;
     public List<PendingCardAction> PendingCardActions { get; } = new();
     public GroundDuelSequenceState GroundDuel { get; } = new();
+    public PossessionSequenceState PossessionSequence { get; } = new();
     public string LastActionName { get; set; } = "Chuẩn bị giao bóng";
     public bool IsPlaying { get; set; }
 }

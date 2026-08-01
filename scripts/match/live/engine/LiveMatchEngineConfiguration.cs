@@ -16,17 +16,16 @@ public sealed class LiveMatchEngineConfiguration
         float clearChanceRedCardProbability,
         float blockedShotCornerProbability,
         float parriedShotCornerProbability,
-        float shotAttemptProbabilityMultiplier,
         float minimumLoftedPassDistanceMeters,
         int minimumThroughBallCreativeSkill,
         float headerShotProbability,
         float defensiveHeaderOutOfPlayProbability,
-        float underPressureDribbleProbability,
         float minimumOffsideAvoidanceProbability,
         float maximumOffsideAvoidanceProbability,
         float penaltyAreaChallengeProbability,
         int maximumDirectAttackActions,
-        float bookedPlayerChallengeProbability)
+        float bookedPlayerChallengeProbability,
+        FootballActionSelectionConfiguration actionSelection)
     {
         if (fixedStepSeconds <= 0d)
         {
@@ -50,17 +49,17 @@ public sealed class LiveMatchEngineConfiguration
         ClearChanceRedCardProbability = clearChanceRedCardProbability;
         BlockedShotCornerProbability = blockedShotCornerProbability;
         ParriedShotCornerProbability = parriedShotCornerProbability;
-        ShotAttemptProbabilityMultiplier = shotAttemptProbabilityMultiplier;
         MinimumLoftedPassDistanceMeters = minimumLoftedPassDistanceMeters;
         MinimumThroughBallCreativeSkill = minimumThroughBallCreativeSkill;
         HeaderShotProbability = headerShotProbability;
         DefensiveHeaderOutOfPlayProbability = defensiveHeaderOutOfPlayProbability;
-        UnderPressureDribbleProbability = underPressureDribbleProbability;
         MinimumOffsideAvoidanceProbability = minimumOffsideAvoidanceProbability;
         MaximumOffsideAvoidanceProbability = maximumOffsideAvoidanceProbability;
         PenaltyAreaChallengeProbability = penaltyAreaChallengeProbability;
         MaximumDirectAttackActions = maximumDirectAttackActions;
         BookedPlayerChallengeProbability = bookedPlayerChallengeProbability;
+        ActionSelection = actionSelection ??
+            throw new ArgumentNullException(nameof(actionSelection));
     }
 
     public double FixedStepSeconds { get; }
@@ -76,17 +75,16 @@ public sealed class LiveMatchEngineConfiguration
     public float ClearChanceRedCardProbability { get; }
     public float BlockedShotCornerProbability { get; }
     public float ParriedShotCornerProbability { get; }
-    public float ShotAttemptProbabilityMultiplier { get; }
     public float MinimumLoftedPassDistanceMeters { get; }
     public int MinimumThroughBallCreativeSkill { get; }
     public float HeaderShotProbability { get; }
     public float DefensiveHeaderOutOfPlayProbability { get; }
-    public float UnderPressureDribbleProbability { get; }
     public float MinimumOffsideAvoidanceProbability { get; }
     public float MaximumOffsideAvoidanceProbability { get; }
     public float PenaltyAreaChallengeProbability { get; }
     public int MaximumDirectAttackActions { get; }
     public float BookedPlayerChallengeProbability { get; }
+    public FootballActionSelectionConfiguration ActionSelection { get; }
 
     public static LiveMatchEngineConfiguration CreateFootballFundamentalsV1()
     {
@@ -104,16 +102,15 @@ public sealed class LiveMatchEngineConfiguration
             clearChanceRedCardProbability: 0.02f,
             blockedShotCornerProbability: 0.44f,
             parriedShotCornerProbability: 0.40f,
-            shotAttemptProbabilityMultiplier: 0.075f,
-            minimumLoftedPassDistanceMeters: 36f,
+            minimumLoftedPassDistanceMeters: 41f,
             minimumThroughBallCreativeSkill: 150,
             headerShotProbability: 0.38f,
             defensiveHeaderOutOfPlayProbability: 0.48f,
-            underPressureDribbleProbability: 0.08f,
             minimumOffsideAvoidanceProbability: 0.72f,
             maximumOffsideAvoidanceProbability: 0.96f,
             penaltyAreaChallengeProbability: 0.04f,
             maximumDirectAttackActions: 3,
-            bookedPlayerChallengeProbability: 0.25f);
+            bookedPlayerChallengeProbability: 0.25f,
+            actionSelection: FootballActionSelectionConfiguration.CreateM1Defaults());
     }
 }

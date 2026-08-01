@@ -14,6 +14,10 @@ public partial class MatchCenter
         popup.AddItem("Chọc khe — nhận bóng cách gôn 35 m", (int)MatchScenarioKind.ThroughBallBreakaway);
         popup.AddItem("Phản công 2 đánh 1", (int)MatchScenarioKind.TwoAttackersVersusOneDefender);
         popup.AddItem("Phản công 3 đánh 2", (int)MatchScenarioKind.ThreeAttackersVersusTwoDefenders);
+        popup.AddItem("Thủ môn triển khai bóng", (int)MatchScenarioKind.GoalkeeperBuildUp);
+        popup.AddItem("Cầu thủ cánh: căng ngang/tạt/recycle", (int)MatchScenarioKind.WingerCutBackDecision);
+        popup.AddItem("Tiền đạo quay lưng — hai outlet", (int)MatchScenarioKind.StrikerBackToGoalWithTwoOutlets);
+        popup.AddItem("CM băng lên vòng cấm muộn", (int)MatchScenarioKind.CentralMidfielderLateBoxEntry);
         popup.AddSeparator("Tranh chấp mặt đất");
         popup.AddItem("1 đấu 1 trung lộ", (int)MatchScenarioKind.CentralOneVersusOne);
         popup.AddItem("1 đấu 1 ngoài biên", (int)MatchScenarioKind.WideOneVersusOne);

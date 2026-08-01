@@ -43,6 +43,8 @@ public sealed class LiveMatchBalanceRecord
         float averagePossessionSpellSeconds,
         int possessionChanges,
         string eventSequenceSignature,
+        string finalSnapshotSignature,
+        FootballActionMetricsSnapshot actionMetrics,
         IReadOnlyList<BalanceGoalRecord> goalRecords)
     {
         MatchIndex = matchIndex;
@@ -72,6 +74,8 @@ public sealed class LiveMatchBalanceRecord
         AveragePossessionSpellSeconds = averagePossessionSpellSeconds;
         PossessionChanges = possessionChanges;
         EventSequenceSignature = eventSequenceSignature;
+        FinalSnapshotSignature = finalSnapshotSignature;
+        ActionMetrics = actionMetrics;
         GoalRecords = new ReadOnlyCollection<BalanceGoalRecord>(new List<BalanceGoalRecord>(goalRecords));
     }
 
@@ -102,13 +106,15 @@ public sealed class LiveMatchBalanceRecord
     public float AveragePossessionSpellSeconds { get; }
     public int PossessionChanges { get; }
     public string EventSequenceSignature { get; }
+    public string FinalSnapshotSignature { get; }
+    public FootballActionMetricsSnapshot ActionMetrics { get; }
     public IReadOnlyList<BalanceGoalRecord> GoalRecords { get; }
     public double ShotConversion => Shots == 0 ? 0d : (double)Goals / Shots;
     public double PassCompletion => PassAttempts == 0 ? 0d : (double)CompletedPasses / PassAttempts;
 
     public IReadOnlyDictionary<string, double> GetMetricValues()
     {
-        return new Dictionary<string, double>
+        Dictionary<string, double> metrics = new()
         {
             { "goals", Goals },
             { "shots", Shots },
@@ -130,5 +136,19 @@ public sealed class LiveMatchBalanceRecord
             { "possession_spell_seconds", AveragePossessionSpellSeconds },
             { "possession_changes", PossessionChanges }
         };
+        foreach (FootballActionType actionType in System.Enum.GetValues<FootballActionType>())
+        {
+            metrics[$"action_{actionType.ToString().ToLowerInvariant()}"] =
+                ActionMetrics.AttemptsByType.GetValueOrDefault(actionType);
+        }
+        metrics["action_score_margin"] = ActionMetrics.AverageScoreMargin;
+        metrics["backward_passes"] = ActionMetrics.BackwardPasses;
+        metrics["sideways_passes"] = ActionMetrics.SidewaysPasses;
+        metrics["forward_passes"] = ActionMetrics.ForwardPasses;
+        metrics["progressive_action_rate"] = ActionMetrics.ProgressiveActionRate;
+        metrics["forced_actions"] = ActionMetrics.ForcedActions;
+        metrics["decision_cancellations"] = ActionMetrics.DecisionCancellations;
+        metrics["no_valid_actions"] = ActionMetrics.NoValidActions;
+        return metrics;
     }
 }

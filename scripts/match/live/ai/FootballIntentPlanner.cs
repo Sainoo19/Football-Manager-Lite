@@ -12,11 +12,16 @@ public sealed class FootballIntentPlanner
     public Dictionary<StringName, PlayerIntent> Plan(FootballWorldSnapshot world)
     {
         Dictionary<StringName, PlayerIntent> intents = new();
-        HashSet<StringName> teamIds = new();
+        List<StringName> teamIds = new();
         foreach (StringName playerId in world.Positions.Keys)
         {
-            teamIds.Add(world.PlayerTeams[playerId]);
+            StringName teamId = world.PlayerTeams[playerId];
+            if (!teamIds.Contains(teamId))
+            {
+                teamIds.Add(teamId);
+            }
         }
+        teamIds.Sort(ComparePlayerIds);
 
         foreach (StringName teamId in teamIds)
         {
@@ -50,7 +55,8 @@ public sealed class FootballIntentPlanner
             world,
             outfieldPlayers,
             world.BallOwnerId,
-            world.ExpectedReceiverId);
+            world.ExpectedReceiverId,
+            world.PreviousBallOwnerId);
         HashSet<StringName> supportSet = new(supportPlayers);
         List<StringName> runners = SelectForwardRunners(
             world,
@@ -197,8 +203,14 @@ public sealed class FootballIntentPlanner
             }
         }
 
-        runners.Sort((first, second) => RunnerPriority(world.PlayerRoles[second])
-            .CompareTo(RunnerPriority(world.PlayerRoles[first])));
+        runners.Sort((first, second) =>
+        {
+            int priorityComparison = RunnerPriority(world.PlayerRoles[second])
+                .CompareTo(RunnerPriority(world.PlayerRoles[first]));
+            return priorityComparison != 0
+                ? priorityComparison
+                : ComparePlayerIds(first, second);
+        });
         if (runners.Count > ForwardRunnerCount)
         {
             runners.RemoveRange(ForwardRunnerCount, runners.Count - ForwardRunnerCount);
@@ -211,7 +223,8 @@ public sealed class FootballIntentPlanner
         FootballWorldSnapshot world,
         List<StringName> candidates,
         StringName ballOwnerId,
-        StringName expectedReceiverId)
+        StringName expectedReceiverId,
+        StringName previousBallOwnerId)
     {
         List<StringName> preferred = new();
         List<StringName> fallback = new();
@@ -230,12 +243,27 @@ public sealed class FootballIntentPlanner
         }
 
         Comparison<StringName> byBallDistance = (first, second) =>
-            PlayerProximity.DistanceSquaredMeters(world.Positions[first], world.BallPosition)
-                .CompareTo(PlayerProximity.DistanceSquaredMeters(world.Positions[second], world.BallPosition));
+        {
+            int distanceComparison =
+                PlayerProximity.DistanceSquaredMeters(world.Positions[first], world.BallPosition)
+                    .CompareTo(PlayerProximity.DistanceSquaredMeters(
+                        world.Positions[second],
+                        world.BallPosition));
+            return distanceComparison != 0
+                ? distanceComparison
+                : ComparePlayerIds(first, second);
+        };
         preferred.Sort(byBallDistance);
         fallback.Sort(byBallDistance);
 
         List<StringName> supportPlayers = new();
+        if (previousBallOwnerId != new StringName() &&
+            previousBallOwnerId != ballOwnerId &&
+            previousBallOwnerId != expectedReceiverId &&
+            fallback.Contains(previousBallOwnerId))
+        {
+            supportPlayers.Add(previousBallOwnerId);
+        }
         foreach (StringName playerId in preferred)
         {
             if (supportPlayers.Count >= SupportPlayerCount)
@@ -281,8 +309,13 @@ public sealed class FootballIntentPlanner
         }
 
         result.Sort((first, second) =>
-            PlayerProximity.DistanceSquaredMeters(world.Positions[first], point)
-                .CompareTo(PlayerProximity.DistanceSquaredMeters(world.Positions[second], point)));
+        {
+            int distanceComparison = PlayerProximity.DistanceSquaredMeters(world.Positions[first], point)
+                .CompareTo(PlayerProximity.DistanceSquaredMeters(world.Positions[second], point));
+            return distanceComparison != 0
+                ? distanceComparison
+                : ComparePlayerIds(first, second);
+        });
         if (result.Count > count)
         {
             result.RemoveRange(count, result.Count - count);
@@ -301,6 +334,7 @@ public sealed class FootballIntentPlanner
                 players.Add(playerId);
             }
         }
+        players.Sort(ComparePlayerIds);
 
         return players;
     }
@@ -322,4 +356,9 @@ public sealed class FootballIntentPlanner
         "CM" => 2,
         _ => 1
     };
+
+    internal static int ComparePlayerIds(StringName first, StringName second)
+    {
+        return StringComparer.Ordinal.Compare(first.ToString(), second.ToString());
+    }
 }

@@ -12,7 +12,7 @@ public sealed partial class LiveMatchEngine
         float direction = AttackDirection(_state.ActiveTeamId);
         StringName bestId = new();
         float bestScore = float.NegativeInfinity;
-        foreach (StringName candidateId in CurrentPositions.Keys)
+        foreach (StringName candidateId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (candidateId == crosserId ||
                 _playerTeams[candidateId] != _state.ActiveTeamId ||

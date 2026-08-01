@@ -21,7 +21,7 @@ public sealed partial class LiveMatchEngine
     {
         List<(StringName PlayerId, AerialArrivalEstimate Arrival)> candidates = new();
         StringName goalkeeperId = new();
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (_playerTeams[playerId] != teamId)
             {
@@ -41,7 +41,13 @@ public sealed partial class LiveMatchEngine
             candidates.Add((playerId, arrival));
         }
         candidates.Sort((first, second) =>
-            first.Arrival.ArrivalTimeSeconds.CompareTo(second.Arrival.ArrivalTimeSeconds));
+        {
+            int arrivalComparison =
+                first.Arrival.ArrivalTimeSeconds.CompareTo(second.Arrival.ArrivalTimeSeconds);
+            return arrivalComparison != 0
+                ? arrivalComparison
+                : FootballIntentPlanner.ComparePlayerIds(first.PlayerId, second.PlayerId);
+        });
 
         int added = 0;
         foreach ((StringName playerId, AerialArrivalEstimate arrival) in candidates)
@@ -81,7 +87,7 @@ public sealed partial class LiveMatchEngine
             return;
         }
 
-        foreach (StringName playerId in _aerialContenderIds)
+        foreach (StringName playerId in OrderedPlayerIds(_aerialContenderIds))
         {
             if (!CurrentPositions.ContainsKey(playerId))
             {

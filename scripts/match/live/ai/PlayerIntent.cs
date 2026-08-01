@@ -29,6 +29,7 @@ public enum PlayerIntentKind
     TackleBall,
     ShoulderChallenge,
     CoverPress,
+    BlockPassingLane,
     MarkOpponent,
     ChaseLooseBall,
     ContestAerialBall,
@@ -73,7 +74,8 @@ public sealed class FootballWorldSnapshot
         bool isLooseBall,
         bool homeAttacksLeft = true,
         bool isShotInFlight = false,
-        bool isCrossInFlight = false)
+        bool isCrossInFlight = false,
+        StringName? previousBallOwnerId = null)
     {
         Positions = positions;
         BasePositions = basePositions;
@@ -90,6 +92,7 @@ public sealed class FootballWorldSnapshot
         HomeAttacksLeft = homeAttacksLeft;
         IsShotInFlight = isShotInFlight;
         IsCrossInFlight = isCrossInFlight;
+        PreviousBallOwnerId = previousBallOwnerId ?? new StringName();
     }
 
     public IReadOnlyDictionary<StringName, Vector2> Positions { get; }
@@ -107,6 +110,7 @@ public sealed class FootballWorldSnapshot
     public bool HomeAttacksLeft { get; }
     public bool IsShotInFlight { get; }
     public bool IsCrossInFlight { get; }
+    public StringName PreviousBallOwnerId { get; }
 
     public float AttackDirection(StringName teamId)
     {

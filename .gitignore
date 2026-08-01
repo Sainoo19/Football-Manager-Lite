@@ -27,3 +27,6 @@ obj/
 
 # Generated test and balance reports (local artifacts)
 /.artifacts/test-reports/
+
+# Local implementation plans
+/plan/

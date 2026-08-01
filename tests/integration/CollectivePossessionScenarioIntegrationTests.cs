@@ -3,7 +3,7 @@ using System.Linq;
 using Godot;
 using Godot.Collections;
 
-public static class PressureReleaseScenarioIntegrationTests
+public static class CollectivePossessionScenarioIntegrationTests
 {
     public static void Run()
     {
@@ -56,6 +56,10 @@ public static class PressureReleaseScenarioIntegrationTests
         {
             engine.AdvanceGameTime(0.05d);
         }
+        for (int step = 0; step < 120 && engine.MaximumPossessionParticipants < 2; step++)
+        {
+            engine.AdvanceGameTime(0.05d);
+        }
 
         LiveMatchMetrics metrics = engine.GetSnapshot().Metrics;
         Check(
@@ -66,6 +70,12 @@ public static class PressureReleaseScenarioIntegrationTests
             metrics.GroundDuelExchanges <= 2,
             $"Lối thoát hợp lệ phải được dùng trước một chuỗi tranh chấp kéo dài; " +
             $"đã có {metrics.GroundDuelExchanges} nhịp trước đường chuyền đầu tiên.");
+        Check(
+            engine.MaximumPossessionParticipants >= 2 &&
+            !string.IsNullOrWhiteSpace(engine.LastActionDecision?.Reason),
+            "Đường chuyền phải tạo một possession có nhiều người chạm bóng và để lại lý do quyết định quan sát được; " +
+            $"participants={engine.MaximumPossessionParticipants}, completed={engine.CompletedPasses}, " +
+            $"attempts={engine.PassAttempts}, reason={engine.LastActionDecision?.Reason}.");
 
         GD.Print("PASS: sandbox 2v1 xác nhận người cầm bóng có thể thoát kèm bằng một đường chuyền thật của engine.");
     }

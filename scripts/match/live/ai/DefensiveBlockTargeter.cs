@@ -68,6 +68,42 @@ public static class DefensiveBlockTargeter
         return LimitDisplacement(shapeTarget, markingTarget, MaximumMarkingDisplacementMeters);
     }
 
+    public static Vector2 PassingLaneTarget(
+        FootballWorldSnapshot world,
+        StringName playerId,
+        StringName teamId)
+    {
+        Vector2 shapeTarget = ShapeTarget(world, playerId, teamId);
+        StringName receiverId = new();
+        float shortestPassDistanceMeters = float.PositiveInfinity;
+        foreach ((StringName candidateId, Vector2 position) in world.Positions)
+        {
+            if (world.PlayerTeams[candidateId] == teamId ||
+                candidateId == world.BallOwnerId ||
+                world.PlayerRoles[candidateId] == "GK")
+            {
+                continue;
+            }
+
+            float distanceMeters = FootballPitchDimensions.DistanceMeters(world.BallPosition, position);
+            if (distanceMeters < shortestPassDistanceMeters ||
+                Mathf.IsEqualApprox(distanceMeters, shortestPassDistanceMeters) &&
+                FootballIntentPlanner.ComparePlayerIds(candidateId, receiverId) < 0)
+            {
+                shortestPassDistanceMeters = distanceMeters;
+                receiverId = candidateId;
+            }
+        }
+
+        if (receiverId == new StringName())
+        {
+            return shapeTarget;
+        }
+
+        Vector2 lanePoint = world.BallPosition.Lerp(world.Positions[receiverId], 0.58f);
+        return LimitDisplacement(shapeTarget, shapeTarget.Lerp(lanePoint, 0.55f), 7f);
+    }
+
     private static Vector2 LimitDisplacement(Vector2 origin, Vector2 target, float maximumDistanceMeters)
     {
         Vector2 originMeters = FootballPitchDimensions.ToMeters(origin);

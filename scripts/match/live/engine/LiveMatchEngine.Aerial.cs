@@ -82,7 +82,7 @@ public sealed partial class LiveMatchEngine
     private List<AerialDuelCandidate> BuildAerialDuelCandidates(StringName contestAttackingTeamId)
     {
         List<AerialDuelCandidate> candidates = new();
-        foreach (StringName playerId in _aerialContenderIds)
+        foreach (StringName playerId in OrderedPlayerIds(_aerialContenderIds))
         {
             if (!CurrentPositions.ContainsKey(playerId))
             {
@@ -189,7 +189,7 @@ public sealed partial class LiveMatchEngine
         StringName teamId = _playerTeams[playerId];
         StringName bestTarget = new();
         float bestScore = float.PositiveInfinity;
-        foreach (StringName candidateId in CurrentPositions.Keys)
+        foreach (StringName candidateId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (candidateId == playerId ||
                 _playerTeams[candidateId] != teamId ||
@@ -273,7 +273,7 @@ public sealed partial class LiveMatchEngine
 
     private bool HasNearbyHeaderOption(StringName playerId)
     {
-        foreach (StringName candidateId in CurrentPositions.Keys)
+        foreach (StringName candidateId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (candidateId != playerId &&
                 _playerTeams[candidateId] == _playerTeams[playerId] &&

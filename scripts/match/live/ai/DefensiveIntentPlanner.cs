@@ -11,15 +11,46 @@ public static class DefensiveIntentPlanner
         LiveTeamPhase phase = LiveTeamPhase.Defending;
         List<StringName> outfieldPlayers = FootballIntentPlanner.TeamOutfieldPlayers(world, teamId);
         outfieldPlayers.Sort((first, second) =>
-            PlayerProximity.DistanceSquaredMeters(world.Positions[first], world.BallPosition)
-                .CompareTo(PlayerProximity.DistanceSquaredMeters(world.Positions[second], world.BallPosition)));
+        {
+            int distanceComparison =
+                PlayerProximity.DistanceSquaredMeters(world.Positions[first], world.BallPosition)
+                    .CompareTo(PlayerProximity.DistanceSquaredMeters(
+                        world.Positions[second],
+                        world.BallPosition));
+            return distanceComparison != 0
+                ? distanceComparison
+                : FootballIntentPlanner.ComparePlayerIds(first, second);
+        });
 
         StringName presser = outfieldPlayers.Count > 0 ? outfieldPlayers[0] : new StringName();
         StringName coverPlayer = outfieldPlayers.Count > 1 ? outfieldPlayers[1] : new StringName();
+        StringName laneBlocker = outfieldPlayers.Count > 2 ? outfieldPlayers[2] : new StringName();
         HashSet<StringName> assigned = new();
         AssignPressingPair(world, phase, presser, coverPlayer, intents, assigned);
+        AssignPassingLaneBlocker(world, teamId, phase, laneBlocker, intents, assigned);
         AssignMarkers(world, teamId, phase, outfieldPlayers, intents, assigned);
         AssignRemainingPlayers(world, teamId, phase, intents);
+    }
+
+    private static void AssignPassingLaneBlocker(
+        FootballWorldSnapshot world,
+        StringName teamId,
+        LiveTeamPhase phase,
+        StringName laneBlocker,
+        Dictionary<StringName, PlayerIntent> intents,
+        HashSet<StringName> assigned)
+    {
+        if (laneBlocker == new StringName())
+        {
+            return;
+        }
+
+        assigned.Add(laneBlocker);
+        intents[laneBlocker] = new PlayerIntent(
+            PlayerIntentKind.BlockPassingLane,
+            DefensiveBlockTargeter.PassingLaneTarget(world, laneBlocker, teamId),
+            phase,
+            world.BallOwnerId);
     }
 
     private static void AssignPressingPair(
@@ -131,8 +162,13 @@ public static class DefensiveIntentPlanner
         }
 
         threats.Sort((first, second) =>
-            PlayerProximity.DistanceSquaredMeters(world.Positions[first], ownGoal)
-                .CompareTo(PlayerProximity.DistanceSquaredMeters(world.Positions[second], ownGoal)));
+        {
+            int distanceComparison = PlayerProximity.DistanceSquaredMeters(world.Positions[first], ownGoal)
+                .CompareTo(PlayerProximity.DistanceSquaredMeters(world.Positions[second], ownGoal));
+            return distanceComparison != 0
+                ? distanceComparison
+                : FootballIntentPlanner.ComparePlayerIds(first, second);
+        });
         return threats;
     }
 

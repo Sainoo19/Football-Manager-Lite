@@ -4,7 +4,7 @@ using Godot;
 public static class TeamSpacingResolver
 {
     private const float MinimumSpacingMeters = 6.5f;
-    private const int ResolutionIterations = 4;
+    private const int ResolutionIterations = 8;
 
     public static void Resolve(
         FootballWorldSnapshot world,

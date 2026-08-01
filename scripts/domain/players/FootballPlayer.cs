@@ -50,7 +50,7 @@ public partial class FootballPlayer : Resource
 
     private void ApplyRoleAttributes()
     {
-        int variation = Math.Abs(id.GetHashCode()) % 9 - 4;
+        int variation = StableAttributeVariation(id);
         pace = Attribute(overall + variation);
         passing = Attribute(overall + (position is "CM" or "AM" or "DM" ? 5 : 0) - (position == "GK" ? 12 : 0));
         vision = Attribute(overall + (position is "CM" or "AM" ? 7 : position == "DM" ? 3 : -2));
@@ -70,4 +70,15 @@ public partial class FootballPlayer : Resource
     }
 
     private static int Attribute(int value) => Mathf.Clamp(value, 1, 99);
+
+    private static int StableAttributeVariation(StringName playerId)
+    {
+        uint hash = 2166136261u;
+        foreach (char character in playerId.ToString())
+        {
+            hash ^= character;
+            hash *= 16777619u;
+        }
+        return (int)(hash % 9u) - 4;
+    }
 }

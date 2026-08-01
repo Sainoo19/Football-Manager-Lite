@@ -71,8 +71,10 @@ public sealed partial class LiveMatchEngine
             _state.IsLooseBallActive,
             _sideController.HomeAttacksLeft,
             _ballActionActive && _ballActionKind == BallActionKind.Shot,
-            _ballActionActive && _ballActionKind == BallActionKind.Cross);
-        System.Collections.Generic.Dictionary<StringName, PlayerIntent> planned = _intentPlanner.Plan(world);
+            _ballActionActive && _ballActionKind == BallActionKind.Cross,
+            _state.PossessionSequence.PreviousOwnerId);
+        System.Collections.Generic.Dictionary<StringName, PlayerIntent> planned =
+            _offBallIntentCoordinator.Plan(world);
 
         _playerIntents.Clear();
         _primaryRunnerId = new StringName();
@@ -102,11 +104,10 @@ public sealed partial class LiveMatchEngine
         }
         ApplyAerialContestTargets();
 
-        float planningInterval = _state.IsLooseBallActive
-            ? _configuration.LooseBallPlanningIntervalSeconds
-            : _ballActionActive
-                ? _configuration.BallInFlightPlanningIntervalSeconds
-                : _configuration.PossessionIntentPlanningIntervalSeconds;
+        float planningInterval = _teamPhaseCoordinator.PlanningInterval(
+            _configuration,
+            _state.IsLooseBallActive,
+            _ballActionActive);
         _nextIntentPlanTime = _state.VisualTime + planningInterval;
     }
 
@@ -173,7 +174,7 @@ public sealed partial class LiveMatchEngine
             reset);
 
         List<StringName> removedPlayers = new();
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (!valid.Contains(playerId))
             {
@@ -256,7 +257,7 @@ public sealed partial class LiveMatchEngine
 
     private Vector2 PositionForReplacedSlot(StringName teamId, StringName slotId)
     {
-        foreach (StringName oldId in CurrentPositions.Keys)
+        foreach (StringName oldId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (_playerTeams.GetValueOrDefault(oldId) == teamId &&
                 _playerSlotIds.GetValueOrDefault(oldId) == slotId)

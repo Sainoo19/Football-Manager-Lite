@@ -17,7 +17,7 @@ public sealed partial class LiveMatchEngine
         };
         StringName defenderId = new();
         float distance = float.PositiveInfinity;
-        foreach (StringName candidateId in CurrentPositions.Keys)
+        foreach (StringName candidateId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (_playerTeams[candidateId] == _actionSourceTeamId ||
                 _playerRoles[candidateId] == "GK" ||

@@ -2,6 +2,9 @@ using Godot;
 
 public sealed class PassOptionEvaluator
 {
+    private const float MinimumPassDistanceMeters = 2.5f;
+    private const float MaximumPassDistanceMeters = 45f;
+
     public bool CanReceiverControl(
         float nearestOpponentDistanceMeters,
         float passingLaneRisk,
@@ -49,7 +52,7 @@ public sealed class PassOptionEvaluator
         float passingLaneRisk,
         bool preferSafe)
     {
-        if (distanceMeters is < 4.5f or > 45f)
+        if (distanceMeters < MinimumPassDistanceMeters || distanceMeters > MaximumPassDistanceMeters)
         {
             return false;
         }

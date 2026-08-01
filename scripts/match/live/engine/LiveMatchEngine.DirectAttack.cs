@@ -33,45 +33,6 @@ public sealed partial class LiveMatchEngine
             forwardGainMeters);
     }
 
-    private bool TryContinueDirectAttack(StringName ownerId, float pressureDistanceMeters)
-    {
-        if (ownerId != _directAttackOwnerId || _directAttackActionsRemaining <= 0)
-        {
-            ClearDirectAttack();
-            return false;
-        }
-
-        Vector2 goal = new(AttackingGoalX(_playerTeams[ownerId]), 0.5f);
-        Vector2 ownerPosition = CurrentPositions[ownerId];
-        float distanceToGoalMeters = FootballPitchDimensions.DistanceMeters(ownerPosition, goal);
-        float laneOffsetMeters = Mathf.Abs(ownerPosition.Y - 0.5f) * FootballPitchDimensions.WidthMeters;
-        DirectAttackContinuation continuation = _directAttackContinuationPlanner.Decide(
-            _playerRoles[ownerId],
-            distanceToGoalMeters,
-            laneOffsetMeters,
-            _directAttackActionsRemaining);
-
-        _directAttackActionsRemaining--;
-        if (continuation == DirectAttackContinuation.Shoot)
-        {
-            ClearDirectAttack();
-            if (ShouldShoot(ownerId, pressureDistanceMeters))
-            {
-                StartLiveShot(ownerId, pressureDistanceMeters);
-                return true;
-            }
-            return false;
-        }
-
-        if (continuation == DirectAttackContinuation.Carry)
-        {
-            StartDribble(ownerId, pressureDistanceMeters < 2.4f);
-            return true;
-        }
-
-        ClearDirectAttack();
-        return false;
-    }
 
     private void ClearDirectAttack()
     {

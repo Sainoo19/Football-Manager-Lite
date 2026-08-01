@@ -26,6 +26,8 @@ public static class GroundDuelScenarioIntegrationTests
 
         HashSet<DribbleTouchType> observedTouches = new();
         bool observedCover = false;
+        StringName initialOwnerId = engine.CurrentBallOwnerId;
+        bool observedDecisiveOutcome = false;
         for (int step = 0; step < 160; step++)
         {
             engine.AdvanceGameTime(0.05d);
@@ -35,6 +37,10 @@ public static class GroundDuelScenarioIntegrationTests
             }
             observedCover |= engine.CurrentIntents.Values.Any(
                 intent => intent.Kind == PlayerIntentKind.CoverPress);
+            observedDecisiveOutcome |= engine.CurrentBallOwnerId != initialOwnerId ||
+                                      engine.IsBallInFlight ||
+                                      engine.IsLooseBall ||
+                                      engine.PendingRestartType != new StringName();
         }
 
         LiveMatchMetrics metrics = engine.GetSnapshot().Metrics;
@@ -64,6 +70,11 @@ public static class GroundDuelScenarioIntegrationTests
         Check(
             observedCover,
             $"Khi một hậu vệ áp sát trong {MatchScenarioFactory.DisplayName(kind)}, khối phòng ngự phải có người bọc lót.");
+        Check(
+            observedDecisiveOutcome && engine.MaximumObservedDuelPairSeconds <= 5.2f,
+            $"{MatchScenarioFactory.DisplayName(kind)} phải kết thúc cặp tranh chấp bằng chuyền, vượt qua, " +
+            $"đoạt bóng, bóng tự do hoặc dứt điểm; thời gian cặp dài nhất=" +
+            $"{engine.MaximumObservedDuelPairSeconds:0.00}s.");
     }
 
     private static void Check(bool condition, string message)

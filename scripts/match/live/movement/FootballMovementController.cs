@@ -116,6 +116,7 @@ public sealed class FootballMovementController
             PlayerIntentKind.HoldUpBall => 2.8f,
             PlayerIntentKind.SupportBall => 5.6f,
             PlayerIntentKind.CoverPress => 6.4f,
+            PlayerIntentKind.BlockPassingLane => 6.0f,
             PlayerIntentKind.CloseDownBall => 7.4f,
             PlayerIntentKind.JockeyBall => 4.8f,
             PlayerIntentKind.ContainBall => 4.4f,

@@ -270,6 +270,7 @@ public sealed partial class LiveMatchEngine
         _pendingOffsideReceiverId = new StringName();
         _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
         _interceptionAttemptedBy.Clear();
+        _state.PossessionSequence.ReleaseOwner();
         _state.BallOwnerId = new StringName();
         PrepareAerialContenders();
         SelectPhasePlayers();
@@ -280,7 +281,7 @@ public sealed partial class LiveMatchEngine
         if (Simulation is null) return new StringName();
         var preferred = new List<StringName>();
         var fallback = new List<StringName>();
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (_playerTeams[playerId] != teamId) continue;
             fallback.Add(playerId);
@@ -295,7 +296,7 @@ public sealed partial class LiveMatchEngine
 
     private StringName ChooseGoalkeeper(StringName teamId)
     {
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
             if (_playerTeams[playerId] == teamId && _playerRoles[playerId] == "GK") return playerId;
         return ChooseOwner(teamId, false);
     }
@@ -416,6 +417,11 @@ public sealed partial class LiveMatchEngine
 
             CompletedPasses++;
             Simulation!.RegisterLivePassCompletion(_actionSourceTeamId);
+            _state.PossessionSequence.RecordCompletedPass(
+                _actionSourceTeamId,
+                _actionSourceId,
+                receiverId);
+            UpdatePossessionDiagnostics();
             if (ShouldBeginDirectAttack(receiverId, completedKind))
             {
                 BeginDirectAttack(receiverId);
@@ -476,7 +482,7 @@ public sealed partial class LiveMatchEngine
     private float PassingLaneRisk(Vector2 from, Vector2 to, StringName passingTeamId)
     {
         float highestRisk = 0;
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (_playerTeams[playerId] == passingTeamId || _playerRoles[playerId] == "GK") continue;
             float pressureDistanceMeters = FootballPitchDimensions.DistanceMeters(

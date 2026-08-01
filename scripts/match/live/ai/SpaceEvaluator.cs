@@ -48,6 +48,12 @@ public static class SpaceEvaluator
                 continue;
             }
 
+            if (FootballPitchDimensions.DistanceMeters(from, position) <=
+                DuelDistanceRules.PressureDistanceMeters)
+            {
+                continue;
+            }
+
             float distance = DistanceToSegment(position, from, to);
             highestRisk = Mathf.Max(highestRisk, 1f - Mathf.Clamp(distance / 0.11f, 0f, 1f));
         }

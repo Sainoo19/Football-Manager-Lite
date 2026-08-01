@@ -40,7 +40,8 @@ public sealed partial class LiveMatchEngine
     private readonly TeamDictionary _playerSlotIds;
     private readonly PaceDictionary _playerPaces;
     private readonly NumberDictionary _playerNumbers;
-    private readonly FootballIntentPlanner _intentPlanner = new();
+    private readonly OffBallIntentCoordinator _offBallIntentCoordinator;
+    private readonly TeamPhaseCoordinator _teamPhaseCoordinator = new();
     private readonly FootballMovementController _movementController = new();
     private readonly MatchSideController _sideController = new();
     private readonly OffsideRule _offsideRule = new();
@@ -48,7 +49,6 @@ public sealed partial class LiveMatchEngine
     private readonly PassExecutionResolver _passExecutionResolver = new();
     private readonly FirstTouchResolver _firstTouchResolver;
     private readonly RollingBallPhysics _rollingBallPhysics = new();
-    private readonly ShotDecisionEvaluator _shotDecisionEvaluator;
     private readonly ShotOutcomeResolver _shotOutcomeResolver;
     private readonly ShotTargetPlanner _shotTargetPlanner = new();
     private readonly TraditionalGoalkeeperPlanner _traditionalGoalkeeperPlanner = new();
@@ -61,21 +61,20 @@ public sealed partial class LiveMatchEngine
     private readonly PenaltyKickResolver _penaltyKickResolver = new();
     private readonly AdvantageRuleEvaluator _advantageRuleEvaluator = new();
     private readonly DecisionVarietyTracker _decisionVarietyTracker = new();
-    private readonly FinalThirdDecisionPlanner _finalThirdDecisionPlanner = new();
     private readonly MatchScenarioFactory _matchScenarioFactory = new();
     private readonly ThroughBallTargetPlanner _throughBallTargetPlanner = new();
     private readonly PassOptionEvaluator _passOptionEvaluator = new();
-    private readonly BallCarrierDecisionEvaluator _ballCarrierDecisionEvaluator;
-    private readonly PressureReleaseDecisionEvaluator _pressureReleaseDecisionEvaluator = new();
+    private readonly FootballActionCoordinator _footballActionCoordinator;
     private readonly ClearanceTargetPlanner _clearanceTargetPlanner = new();
     private readonly DuelDistanceRules _duelDistanceRules = new();
     private readonly DribbleTouchPlanner _dribbleTouchPlanner = new();
     private readonly DefenderEngagementPlanner _defenderEngagementPlanner = new();
-    private readonly GroundDuelResolver _groundDuelResolver;
+    private readonly BallContestCoordinator _ballContestCoordinator;
     private readonly AerialBallTrajectoryPlanner _aerialBallTrajectoryPlanner = new();
     private readonly AerialLandingPredictor _aerialLandingPredictor = new();
     private readonly AerialDuelResolver _aerialDuelResolver;
     private readonly LiveMatchEngineConfiguration _configuration;
+    private readonly RestartCoordinator _restartCoordinator = new();
     private readonly IntentDictionary _playerIntents = new();
     private readonly HashSet<StringName> _interceptionAttemptedBy = new();
     private LiveMatchRuntime _runtime = new();
@@ -99,6 +98,8 @@ public sealed partial class LiveMatchEngine
     private float _nextDecisionTime;
     private int _decisionSerial;
     private uint _liveDecisionSeed;
+    private FootballActionType? _previousActionType;
+    private StringName _previousActionTargetId = new();
     private int _decisionsSinceShot;
     private StringName _carryOwnerId = new();
     private int _consecutiveCarries;
@@ -160,11 +161,18 @@ public sealed partial class LiveMatchEngine
     public int ThrowInsTaken { get; private set; }
     public int FreeKicksTaken { get; private set; }
     public int PenaltiesTaken { get; private set; }
+    public float MaximumObservedOwnerHoldSeconds { get; private set; }
+    public float MaximumObservedDuelPairSeconds { get; private set; }
+    public int MaximumPossessionParticipants { get; private set; }
+    public FootballActionDecision? LastActionDecision { get; private set; }
+    public FootballActionMetricsSnapshot ActionMetrics => _footballActionCoordinator.Metrics;
     public float MinimumObservedGroundDuelSeparationMeters { get; private set; } = float.PositiveInfinity;
     public bool IsKickoffPassPending => _kickoffPassPending;
     public StringName KickoffReceiverId => _kickoffReceiverId;
     public bool IsQuickFreeKick => _state.IsRestartPending && _state.RestartType == "free_kick" && _freeKickRestartPlan.IsQuick;
     public bool IsPenaltyRestart => _state.IsRestartPending && _state.RestartType == "penalty";
+    public string EngineVersion => LiveMatchEngineIdentity.EngineVersion;
+    public string ConfigurationFingerprint { get; }
     public int PendingCardActionCount => _state.PendingCardActions.Count;
     public StringName CurrentBallOwnerId => _state.BallOwnerId;
     public IReadOnlyDictionary<StringName, PlayerIntent> CurrentIntents => _playerIntents;
@@ -239,15 +247,16 @@ public sealed partial class LiveMatchEngine
     public LiveMatchEngine(LiveMatchEngineConfiguration configuration)
     {
         _configuration = configuration ?? throw new System.ArgumentNullException(nameof(configuration));
+        ConfigurationFingerprint = LiveMatchEngineIdentity.ConfigurationFingerprint(configuration);
         _firstTouchResolver = new FirstTouchResolver(configuration.FirstTouchControlChanceBonus);
         _shotOutcomeResolver = new ShotOutcomeResolver(
             configuration.ShotGoalProbabilityMultiplier,
             configuration.ParriedShotCornerProbability);
-        _shotDecisionEvaluator = new ShotDecisionEvaluator(configuration.ShotAttemptProbabilityMultiplier);
-        _groundDuelResolver = new GroundDuelResolver(configuration.GroundDuelFoulProbabilityMultiplier);
+        _ballContestCoordinator = new BallContestCoordinator(
+            new GroundDuelResolver(configuration.GroundDuelFoulProbabilityMultiplier));
         _aerialDuelResolver = new AerialDuelResolver(configuration.HeaderShotProbability);
-        _ballCarrierDecisionEvaluator = new BallCarrierDecisionEvaluator(
-            configuration.UnderPressureDribbleProbability);
+        _footballActionCoordinator = new FootballActionCoordinator(configuration.ActionSelection);
+        _offBallIntentCoordinator = new OffBallIntentCoordinator(new FootballIntentPlanner());
         _playerTeams = _state.PlayerTeams;
         _playerRoles = _state.PlayerRoles;
         _playerSlotIds = _state.PlayerSlotIds;
@@ -334,6 +343,13 @@ public sealed partial class LiveMatchEngine
         _usesExternalRuntime = true;
     }
 
+    private static List<StringName> OrderedPlayerIds(IEnumerable<StringName> playerIds)
+    {
+        List<StringName> ordered = new(playerIds);
+        ordered.Sort(FootballIntentPlanner.ComparePlayerIds);
+        return ordered;
+    }
+
     public void SetMatch(FootballMatchSimulation simulation)
     {
         System.ArgumentNullException.ThrowIfNull(simulation);
@@ -361,6 +377,8 @@ public sealed partial class LiveMatchEngine
         _phaseLane = 0.5f;
         _phaseSerial = 0;
         _decisionSerial = 0;
+        _previousActionType = null;
+        _previousActionTargetId = new StringName();
         _liveDecisionSeed = unchecked((uint)simulation.MatchSeed) ^
                             unchecked((uint)(simulation.MatchSeed >> 32));
         _decisionVarietyTracker.Reset();
@@ -401,6 +419,7 @@ public sealed partial class LiveMatchEngine
         _state.IsLooseBallActive = false;
         _state.LooseBallResolveTime = 0f;
         _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
+        _state.PossessionSequence.Reset();
         _state.IsRestartPending = false;
         _state.RestartType = new StringName();
         _state.RestartTeamId = new StringName();
@@ -437,6 +456,11 @@ public sealed partial class LiveMatchEngine
         GoalkeeperAerialCatches = 0;
         GoalkeeperPunches = 0;
         AerialSecondBalls = 0;
+        MaximumObservedOwnerHoldSeconds = 0f;
+        MaximumObservedDuelPairSeconds = 0f;
+        MaximumPossessionParticipants = 0;
+        LastActionDecision = null;
+        _footballActionCoordinator.Reset();
         ResetLiveAnalytics();
         MinimumObservedGroundDuelSeparationMeters = float.PositiveInfinity;
         ActiveScenario = null;

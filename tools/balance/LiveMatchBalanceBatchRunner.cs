@@ -138,20 +138,84 @@ public partial class LiveMatchBalanceBatchRunner : Node
         {
             LiveMatchBalanceRecord expected = records[index];
             (FootballTeam home, FootballTeam away) = SelectTeams(teams, expected.MatchIndex - 1);
+            HeadlessLiveMatchResult fastResult = runner.RunToFullTime(
+                new FootballMatchSimulation().setup(home, away, expected.Seed),
+                MatchPlaybackSpeed.Fastest);
+            LiveMatchBalanceRecord fast = analyzer.CreateRecord(expected.MatchIndex, fastResult);
             HeadlessLiveMatchResult realTimeResult = runner.RunToFullTime(
                 new FootballMatchSimulation().setup(home, away, expected.Seed),
                 MatchPlaybackSpeed.RealTime,
                 realStepSeconds: 60d);
             LiveMatchBalanceRecord realTime = analyzer.CreateRecord(expected.MatchIndex, realTimeResult);
-            if (!analyzer.AreEquivalent(expected, realTime))
+            if (!analyzer.AreEquivalent(fast, realTime))
             {
                 journal.AddCodeBug(
                     BalanceIssueSeverity.Error,
                     "PLAYBACK_SPEED_DIVERGENCE",
-                    "Realtime và tăng tốc tạo ra diễn biến khác nhau với cùng seed.",
+                    "Realtime và tăng tốc tạo ra diễn biến khác nhau với cùng seed. " +
+                    DescribeDifference(fast, realTime) + " " +
+                    DescribeSnapshotDifference(fastResult.FinalSnapshot, realTimeResult.FinalSnapshot),
                     expected.Seed);
             }
         }
+    }
+
+    private static string DescribeSnapshotDifference(
+        LiveMatchSnapshot expected,
+        LiveMatchSnapshot actual)
+    {
+        List<string> differences = new();
+        if (Math.Abs(expected.ElapsedGameSeconds - actual.ElapsedGameSeconds) >= 0.000000001d)
+        {
+            differences.Add($"time={expected.ElapsedGameSeconds:R}/{actual.ElapsedGameSeconds:R}");
+        }
+        if (!expected.BallPosition.IsEqualApprox(actual.BallPosition))
+        {
+            differences.Add($"ball={expected.BallPosition}/{actual.BallPosition}");
+        }
+        foreach (StringName playerId in expected.Positions.Keys.OrderBy(id => id.ToString(), StringComparer.Ordinal))
+        {
+            if (!actual.Positions.TryGetValue(playerId, out Vector2 actualPosition) ||
+                !expected.Positions[playerId].IsEqualApprox(actualPosition))
+            {
+                differences.Add($"position[{playerId}]={expected.Positions[playerId]}/{actualPosition}");
+                break;
+            }
+            if (!actual.TargetPositions.TryGetValue(playerId, out Vector2 actualTarget) ||
+                !expected.TargetPositions[playerId].IsEqualApprox(actualTarget))
+            {
+                differences.Add($"target[{playerId}]={expected.TargetPositions[playerId]}/{actualTarget}");
+                break;
+            }
+        }
+        return differences.Count == 0
+            ? "Snapshot chỉ khác ở độ chính xác bit."
+            : $"Snapshot: {string.Join(", ", differences)}.";
+    }
+
+    private static string DescribeDifference(
+        LiveMatchBalanceRecord expected,
+        LiveMatchBalanceRecord actual)
+    {
+        List<string> differences = expected.GetMetricValues()
+            .Where(pair =>
+                !actual.GetMetricValues().TryGetValue(pair.Key, out double actualValue) ||
+                Math.Abs(pair.Value - actualValue) >= 0.000001d)
+            .Select(pair =>
+                $"{pair.Key}={pair.Value:0.###}/{actual.GetMetricValues().GetValueOrDefault(pair.Key):0.###}")
+            .Take(8)
+            .ToList();
+        if (expected.EventSequenceSignature != actual.EventSequenceSignature)
+        {
+            differences.Add("event_sequence=khác");
+        }
+        if (expected.FinalSnapshotSignature != actual.FinalSnapshotSignature)
+        {
+            differences.Add("final_snapshot=khác");
+        }
+        return differences.Count == 0
+            ? "Không tìm thấy trường dữ liệu khác biệt trong record."
+            : $"Khác biệt: {string.Join(", ", differences)}.";
     }
 
     private static (FootballTeam Home, FootballTeam Away) SelectTeams(Array<FootballTeam> teams, int index)

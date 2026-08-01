@@ -69,6 +69,10 @@ public sealed partial class LiveMatchEngine
             PlaceScenarioPlayer(defenders[index], definition.DefenderPositions[index]);
         }
         PlaceScenarioGoalkeepers(attackingTeamId, defendingTeamId);
+        if (kind == MatchScenarioKind.GoalkeeperBuildUp)
+        {
+            PlaceScenarioPlayer(ballCarrierId, definition.BallCarrierPosition);
+        }
 
         _state.BallOwnerId = ballCarrierId;
         BallPosition = definition.BallCarrierPosition;
@@ -146,7 +150,7 @@ public sealed partial class LiveMatchEngine
         int attackingIndex = 0;
         int defendingIndex = 0;
         float direction = AttackDirection(attackingTeamId);
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (selectedPlayers.Contains(playerId) || _playerRoles[playerId] == "GK")
             {
@@ -188,7 +192,7 @@ public sealed partial class LiveMatchEngine
     {
         foreach (string role in preferredRoles)
         {
-            foreach (StringName playerId in CurrentPositions.Keys)
+            foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
             {
                 if (_playerTeams[playerId] == teamId &&
                     _playerRoles[playerId] == role &&
@@ -199,7 +203,7 @@ public sealed partial class LiveMatchEngine
             }
         }
 
-        foreach (StringName playerId in CurrentPositions.Keys)
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
         {
             if (_playerTeams[playerId] == teamId &&
                 _playerRoles[playerId] != "GK" &&
@@ -215,6 +219,10 @@ public sealed partial class LiveMatchEngine
     {
         MatchScenarioKind.ThroughBallBreakaway => new[] { "AM", "CM", "DM" },
         MatchScenarioKind.TwoAttackersVersusOneDefender => new[] { "ST", "AM", "RW", "LW" },
+        MatchScenarioKind.GoalkeeperBuildUp => new[] { "GK" },
+        MatchScenarioKind.WingerCutBackDecision => new[] { "RW", "LW", "RB", "LB" },
+        MatchScenarioKind.StrikerBackToGoalWithTwoOutlets => new[] { "ST", "AM" },
+        MatchScenarioKind.CentralMidfielderLateBoxEntry => new[] { "CM", "AM" },
         MatchScenarioKind.CentralOneVersusOne => new[] { "AM", "CM", "ST" },
         MatchScenarioKind.WideOneVersusOne => new[] { "LW", "RW", "LB", "RB" },
         MatchScenarioKind.StrikerBackToGoalOneVersusOne => new[] { "ST", "AM" },
@@ -228,6 +236,17 @@ public sealed partial class LiveMatchEngine
     {
         MatchScenarioKind.ThroughBallBreakaway => new[] { "ST", "LW", "RW" },
         MatchScenarioKind.TwoAttackersVersusOneDefender => new[] { "LW", "RW", "ST", "AM" },
+        MatchScenarioKind.GoalkeeperBuildUp when index == 0 => new[] { "CB" },
+        MatchScenarioKind.GoalkeeperBuildUp when index == 1 => new[] { "CB", "LB", "RB" },
+        MatchScenarioKind.GoalkeeperBuildUp => new[] { "DM", "CM" },
+        MatchScenarioKind.WingerCutBackDecision when index == 0 => new[] { "ST" },
+        MatchScenarioKind.WingerCutBackDecision when index == 1 => new[] { "AM", "CM" },
+        MatchScenarioKind.WingerCutBackDecision => new[] { "LB", "RB", "CM" },
+        MatchScenarioKind.StrikerBackToGoalWithTwoOutlets => index == 0
+            ? new[] { "LW", "AM", "CM" }
+            : new[] { "RW", "AM", "CM" },
+        MatchScenarioKind.CentralMidfielderLateBoxEntry when index == 0 => new[] { "ST", "AM" },
+        MatchScenarioKind.CentralMidfielderLateBoxEntry => new[] { "RW", "LW" },
         MatchScenarioKind.AerialCrossIntoBox when index == 0 => new[] { "ST", "AM" },
         MatchScenarioKind.AerialCrossIntoBox => new[] { "LW", "RW", "AM" },
         MatchScenarioKind.LoftedPassAerialDuel => new[] { "ST", "AM", "LW", "RW" },

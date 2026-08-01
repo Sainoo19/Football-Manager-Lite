@@ -45,6 +45,7 @@ public partial class LiveMatchBalanceShardMerger : Node
         Dictionary<string, double> weightedMetricTotals = new(StringComparer.Ordinal);
         Dictionary<string, int> goalsByDistance = new(StringComparer.Ordinal);
         Dictionary<string, int> goalsBySituation = new(StringComparer.Ordinal);
+        Dictionary<string, int> actionReasonCounts = new(StringComparer.Ordinal);
         HashSet<string> eventSignatures = new(StringComparer.Ordinal);
         BalanceIssueJournal journal = new();
         List<string> csvPaths = new();
@@ -65,15 +66,25 @@ public partial class LiveMatchBalanceShardMerger : Node
             }
             AddCounts(root.GetProperty("goals_by_distance"), goalsByDistance);
             AddCounts(root.GetProperty("goals_by_situation"), goalsBySituation);
+            if (root.TryGetProperty("action_reason_counts", out JsonElement shardActionReasonCounts))
+            {
+                AddCounts(shardActionReasonCounts, actionReasonCounts);
+            }
 
             string csvPath = Path.Combine(inputDirectory, "matches.csv");
             csvPaths.Add(csvPath);
+            bool hasFinalSnapshotSignature = File.ReadLines(csvPath)
+                .First()
+                .Contains("final_snapshot_signature", StringComparison.Ordinal);
             foreach (string line in File.ReadLines(csvPath).Skip(1))
             {
-                int lastComma = line.LastIndexOf(',');
-                if (lastComma >= 0 && lastComma < line.Length - 1)
+                int signatureEnd = hasFinalSnapshotSignature
+                    ? line.LastIndexOf(',')
+                    : line.Length;
+                int signatureStart = line.LastIndexOf(',', signatureEnd - 1);
+                if (signatureStart >= 0 && signatureStart < signatureEnd - 1)
                 {
-                    eventSignatures.Add(line[(lastComma + 1)..].Trim());
+                    eventSignatures.Add(line[(signatureStart + 1)..signatureEnd].Trim());
                 }
             }
             ImportCodeBugs(Path.Combine(inputDirectory, "issue-journal.jsonl"), journal);
@@ -89,6 +100,7 @@ public partial class LiveMatchBalanceShardMerger : Node
             metricAverages,
             goalsByDistance,
             goalsBySituation,
+            actionReasonCounts,
             eventSignatures.Count);
         LiveMatchBalanceConfiguration configuration = LiveMatchBalanceConfiguration.CreateFootballFundamentalsV1();
         new LiveMatchBalanceAnalyzer().ValidateSummary(summary, configuration, journal);
