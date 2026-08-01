@@ -144,6 +144,7 @@ public sealed partial class LiveMatchEngine
         FootballMatchEvent? restartEvent = Simulation.register_live_restart(teamId, restartType);
         if (restartEvent is not null)
             LiveMatchEvent?.Invoke(restartEvent);
+        UpdateTeamPhases();
     }
 
     private void UpdateRestartBallPresentation()
@@ -231,6 +232,7 @@ public sealed partial class LiveMatchEngine
         RecordRestartTaken(_state.RestartType);
         SetTrackedPossession(_state.RestartTeamId);
         SyncLineups(false);
+        UpdateTeamPhases();
 
         string type = _state.RestartType.ToString();
         if (type == "goal_kick")
@@ -295,7 +297,7 @@ public sealed partial class LiveMatchEngine
             _playerIntents[playerId] = new PlayerIntent(
                 PlayerIntentKind.RepositionForRestart,
                 target,
-                isKickingTeam ? LiveTeamPhase.InPossession : LiveTeamPhase.Defending);
+                LiveTeamPhase.SetPiece);
         }
     }
 
@@ -327,7 +329,7 @@ public sealed partial class LiveMatchEngine
             _playerIntents[playerId] = new PlayerIntent(
                 PlayerIntentKind.RepositionForRestart,
                 target,
-                isRestartingTeam ? LiveTeamPhase.InPossession : LiveTeamPhase.Defending);
+                LiveTeamPhase.SetPiece);
         }
     }
 
@@ -367,9 +369,7 @@ public sealed partial class LiveMatchEngine
             _playerIntents[playerId] = new PlayerIntent(
                 PlayerIntentKind.RepositionForRestart,
                 target,
-                _playerTeams[playerId] == _state.RestartTeamId
-                    ? LiveTeamPhase.InPossession
-                    : LiveTeamPhase.Defending);
+                LiveTeamPhase.SetPiece);
         }
     }
 
@@ -569,6 +569,7 @@ public sealed partial class LiveMatchEngine
         StringName receiverId = _kickoffReceiverId;
         _kickoffPassPending = false;
         _kickoffReceiverId = new StringName();
+        UpdateTeamPhases();
         StartPass(receiverId, BallActionKind.Pass);
         SetAction($"{PlayerName(ownerId)} chuyền bóng về cho {PlayerName(receiverId)} để bắt đầu trận đấu");
         return true;

@@ -73,6 +73,7 @@ public sealed class BalanceReportWriter
             goals_by_distance = summary.GoalsByDistance,
             goals_by_situation = summary.GoalsBySituation,
             action_reason_counts = summary.ActionReasonCounts,
+            phase_transition_counts = summary.PhaseTransitionCounts,
             thresholds = configuration.MetricRanges.Values.Select(range => new
             {
                 range.Key,
@@ -102,7 +103,9 @@ public sealed class BalanceReportWriter
             "offsides,penalties,corners,goal_kicks,throw_ins,free_kicks," +
             "average_possession_spell_seconds,possession_changes,action_decisions,action_score_margin," +
             "backward_passes,sideways_passes,forward_passes,progressive_action_rate,forced_actions," +
-            "decision_cancellations,no_valid_actions,event_sequence_signature," +
+            "decision_cancellations,no_valid_actions,phase_transitions,counter_attacks," +
+            "counter_attack_conversion,time_to_organize_seconds,final_third_rest_defence_players," +
+            "emergency_defence_entries,event_sequence_signature," +
             "final_snapshot_signature");
         foreach (LiveMatchBalanceRecord record in records)
         {
@@ -143,6 +146,12 @@ public sealed class BalanceReportWriter
                 .Append(record.ActionMetrics.ForcedActions).Append(',')
                 .Append(record.ActionMetrics.DecisionCancellations).Append(',')
                 .Append(record.ActionMetrics.NoValidActions).Append(',')
+                .Append(record.TeamPhaseMetrics.TransitionCounts.Values.Sum()).Append(',')
+                .Append(record.TeamPhaseMetrics.CounterAttacks).Append(',')
+                .Append(Format(record.TeamPhaseMetrics.CounterAttackConversion)).Append(',')
+                .Append(Format(record.TeamPhaseMetrics.AverageOrganizationSeconds)).Append(',')
+                .Append(Format(record.TeamPhaseMetrics.AverageFinalThirdRestDefencePlayers)).Append(',')
+                .Append(record.TeamPhaseMetrics.EmergencyDefenceEntries).Append(',')
                 .Append(record.EventSequenceSignature).Append(',')
                 .Append(record.FinalSnapshotSignature)
                 .AppendLine();
@@ -259,6 +268,33 @@ public sealed class BalanceReportWriter
                      .ThenBy(pair => pair.Key, StringComparer.Ordinal))
         {
             report.Append("- ").Append(reason).Append(": ").Append(count).AppendLine();
+        }
+
+        report.AppendLine()
+            .AppendLine("## M2 possession phases")
+            .AppendLine()
+            .AppendLine("| Metric | Trung bình / trận |")
+            .AppendLine("|---|---:|")
+            .Append("| Phase transitions | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("phase_transitions"))).AppendLine(" |")
+            .Append("| Counterattacks | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("counter_attacks"))).AppendLine(" |")
+            .Append("| Counterattack conversion | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("counter_attack_conversion"))).AppendLine(" |")
+            .Append("| Time to organize | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("time_to_organize_seconds"))).AppendLine(" |")
+            .Append("| Rest-defence players in final third | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("final_third_rest_defence_players"))).AppendLine(" |")
+            .Append("| Emergency-defence entries | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("emergency_defence_entries"))).AppendLine(" |")
+            .AppendLine()
+            .AppendLine("### Phase transition matrix")
+            .AppendLine();
+        foreach ((string transition, int count) in summary.PhaseTransitionCounts
+                     .OrderByDescending(pair => pair.Value)
+                     .ThenBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            report.Append("- ").Append(transition).Append(": ").Append(count).AppendLine();
         }
 
         report.AppendLine()

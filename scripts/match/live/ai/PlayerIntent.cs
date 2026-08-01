@@ -1,14 +1,6 @@
 using System.Collections.Generic;
 using Godot;
 
-public enum LiveTeamPhase
-{
-    InPossession,
-    BallInFlight,
-    Defending,
-    LooseBall
-}
-
 public enum PlayerIntentKind
 {
     Goalkeep,
@@ -34,6 +26,7 @@ public enum PlayerIntentKind
     ChaseLooseBall,
     ContestAerialBall,
     ClaimAerialBall,
+    RecoverGoalSide,
     RepositionForRestart
 }
 
@@ -75,7 +68,8 @@ public sealed class FootballWorldSnapshot
         bool homeAttacksLeft = true,
         bool isShotInFlight = false,
         bool isCrossInFlight = false,
-        StringName? previousBallOwnerId = null)
+        StringName? previousBallOwnerId = null,
+        IReadOnlyDictionary<StringName, TeamPhaseState>? teamPhaseStates = null)
     {
         Positions = positions;
         BasePositions = basePositions;
@@ -93,6 +87,7 @@ public sealed class FootballWorldSnapshot
         IsShotInFlight = isShotInFlight;
         IsCrossInFlight = isCrossInFlight;
         PreviousBallOwnerId = previousBallOwnerId ?? new StringName();
+        TeamPhaseStates = teamPhaseStates;
     }
 
     public IReadOnlyDictionary<StringName, Vector2> Positions { get; }
@@ -111,6 +106,7 @@ public sealed class FootballWorldSnapshot
     public bool IsShotInFlight { get; }
     public bool IsCrossInFlight { get; }
     public StringName PreviousBallOwnerId { get; }
+    public IReadOnlyDictionary<StringName, TeamPhaseState>? TeamPhaseStates { get; }
 
     public float AttackDirection(StringName teamId)
     {
@@ -127,11 +123,23 @@ public sealed class FootballWorldSnapshot
             return LiveTeamPhase.LooseBall;
         }
 
+        if (TeamPhaseStates is not null && TeamPhaseStates.TryGetValue(teamId, out TeamPhaseState state))
+        {
+            return state.Phase;
+        }
+
         if (teamId != PossessionTeamId)
         {
             return LiveTeamPhase.Defending;
         }
 
         return IsBallInFlight ? LiveTeamPhase.BallInFlight : LiveTeamPhase.InPossession;
+    }
+
+    public int RequiredRestDefencePlayersFor(StringName teamId)
+    {
+        return TeamPhaseStates is not null && TeamPhaseStates.TryGetValue(teamId, out TeamPhaseState state)
+            ? state.RequiredRestDefencePlayers
+            : 2;
     }
 }

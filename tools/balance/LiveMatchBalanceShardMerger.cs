@@ -46,6 +46,7 @@ public partial class LiveMatchBalanceShardMerger : Node
         Dictionary<string, int> goalsByDistance = new(StringComparer.Ordinal);
         Dictionary<string, int> goalsBySituation = new(StringComparer.Ordinal);
         Dictionary<string, int> actionReasonCounts = new(StringComparer.Ordinal);
+        Dictionary<string, int> phaseTransitionCounts = new(StringComparer.Ordinal);
         HashSet<string> eventSignatures = new(StringComparer.Ordinal);
         BalanceIssueJournal journal = new();
         List<string> csvPaths = new();
@@ -69,6 +70,10 @@ public partial class LiveMatchBalanceShardMerger : Node
             if (root.TryGetProperty("action_reason_counts", out JsonElement shardActionReasonCounts))
             {
                 AddCounts(shardActionReasonCounts, actionReasonCounts);
+            }
+            if (root.TryGetProperty("phase_transition_counts", out JsonElement shardPhaseTransitionCounts))
+            {
+                AddCounts(shardPhaseTransitionCounts, phaseTransitionCounts);
             }
 
             string csvPath = Path.Combine(inputDirectory, "matches.csv");
@@ -101,6 +106,7 @@ public partial class LiveMatchBalanceShardMerger : Node
             goalsByDistance,
             goalsBySituation,
             actionReasonCounts,
+            phaseTransitionCounts,
             eventSignatures.Count);
         LiveMatchBalanceConfiguration configuration = LiveMatchBalanceConfiguration.CreateFootballFundamentalsV1();
         new LiveMatchBalanceAnalyzer().ValidateSummary(summary, configuration, journal);

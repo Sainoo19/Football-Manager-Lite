@@ -76,6 +76,13 @@ public sealed partial class LiveMatchEngine
 
         _state.BallOwnerId = ballCarrierId;
         BallPosition = definition.BallCarrierPosition;
+        if (definition.StartsAfterTurnover)
+        {
+            _teamPhaseCoordinator.Reset(
+                new[] { attackingTeamId, defendingTeamId },
+                defendingTeamId,
+                _state.VisualTime);
+        }
         SetTrackedPossession(attackingTeamId);
         _attackProgress = AttackProgress(attackingTeamId, BallPosition);
         _phaseLane = BallPosition.Y;

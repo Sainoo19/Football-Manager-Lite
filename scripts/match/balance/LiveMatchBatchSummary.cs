@@ -11,6 +11,7 @@ public sealed class LiveMatchBatchSummary
         IReadOnlyDictionary<string, int> goalsByDistance,
         IReadOnlyDictionary<string, int> goalsBySituation,
         IReadOnlyDictionary<string, int> actionReasonCounts,
+        IReadOnlyDictionary<string, int> phaseTransitionCounts,
         int uniqueEventSequences,
         int completedMatchCount)
     {
@@ -20,6 +21,7 @@ public sealed class LiveMatchBatchSummary
         GoalsByDistance = goalsByDistance;
         GoalsBySituation = goalsBySituation;
         ActionReasonCounts = actionReasonCounts;
+        PhaseTransitionCounts = phaseTransitionCounts;
         UniqueEventSequences = uniqueEventSequences;
     }
 
@@ -29,6 +31,7 @@ public sealed class LiveMatchBatchSummary
     public IReadOnlyDictionary<string, int> GoalsByDistance { get; }
     public IReadOnlyDictionary<string, int> GoalsBySituation { get; }
     public IReadOnlyDictionary<string, int> ActionReasonCounts { get; }
+    public IReadOnlyDictionary<string, int> PhaseTransitionCounts { get; }
     public int UniqueEventSequences { get; }
     public double UniqueEventSequenceRatio => CompletedMatchCount == 0
         ? 0d
@@ -56,6 +59,7 @@ public sealed class LiveMatchBatchSummary
         };
         Dictionary<string, int> goalsBySituation = new(StringComparer.Ordinal);
         Dictionary<string, int> actionReasonCounts = new(StringComparer.Ordinal);
+        Dictionary<string, int> phaseTransitionCounts = new(StringComparer.Ordinal);
         foreach (BalanceGoalRecord goal in matches.SelectMany(match => match.GoalRecords))
         {
             string distanceBucket = goal.DistanceMeters < 10f
@@ -72,6 +76,11 @@ public sealed class LiveMatchBatchSummary
         {
             actionReasonCounts[reason] = actionReasonCounts.GetValueOrDefault(reason) + count;
         }
+        foreach ((string transition, int count) in matches.SelectMany(match =>
+                     match.TeamPhaseMetrics.TransitionCounts))
+        {
+            phaseTransitionCounts[transition] = phaseTransitionCounts.GetValueOrDefault(transition) + count;
+        }
 
         int uniqueSequences = matches
             .Select(match => match.EventSequenceSignature)
@@ -83,6 +92,7 @@ public sealed class LiveMatchBatchSummary
             new ReadOnlyDictionary<string, int>(goalsByDistance),
             new ReadOnlyDictionary<string, int>(goalsBySituation),
             new ReadOnlyDictionary<string, int>(actionReasonCounts),
+            new ReadOnlyDictionary<string, int>(phaseTransitionCounts),
             uniqueSequences,
             matches.Count);
     }
@@ -94,6 +104,7 @@ public sealed class LiveMatchBatchSummary
         IReadOnlyDictionary<string, int> goalsByDistance,
         IReadOnlyDictionary<string, int> goalsBySituation,
         IReadOnlyDictionary<string, int> actionReasonCounts,
+        IReadOnlyDictionary<string, int> phaseTransitionCounts,
         int uniqueEventSequences)
     {
         return new LiveMatchBatchSummary(
@@ -102,6 +113,7 @@ public sealed class LiveMatchBatchSummary
             new ReadOnlyDictionary<string, int>(new Dictionary<string, int>(goalsByDistance)),
             new ReadOnlyDictionary<string, int>(new Dictionary<string, int>(goalsBySituation)),
             new ReadOnlyDictionary<string, int>(new Dictionary<string, int>(actionReasonCounts)),
+            new ReadOnlyDictionary<string, int>(new Dictionary<string, int>(phaseTransitionCounts)),
             uniqueEventSequences,
             completedMatchCount);
     }

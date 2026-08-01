@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 public sealed class FootballIntentPlanner
@@ -30,7 +31,8 @@ public sealed class FootballIntentPlanner
             {
                 PlanLooseBallTeam(world, teamId, intents);
             }
-            else if (phase is LiveTeamPhase.InPossession or LiveTeamPhase.BallInFlight)
+            else if (LiveTeamPhaseRules.IsPossessionPhase(phase) ||
+                     phase == LiveTeamPhase.SetPiece && teamId == world.PossessionTeamId)
             {
                 PlanPossessionTeam(world, teamId, phase, intents);
             }
@@ -51,17 +53,25 @@ public sealed class FootballIntentPlanner
         Dictionary<StringName, PlayerIntent> intents)
     {
         List<StringName> outfieldPlayers = TeamOutfieldPlayers(world, teamId);
+        HashSet<StringName> restDefenceSet = SelectRestDefencePlayers(
+            world,
+            teamId,
+            outfieldPlayers,
+            world.RequiredRestDefencePlayersFor(teamId),
+            world.BallOwnerId,
+            world.ExpectedReceiverId);
         List<StringName> supportPlayers = SelectSupportPlayers(
             world,
             outfieldPlayers,
             world.BallOwnerId,
             world.ExpectedReceiverId,
-            world.PreviousBallOwnerId);
+            world.PreviousBallOwnerId,
+            restDefenceSet);
         HashSet<StringName> supportSet = new(supportPlayers);
         List<StringName> runners = SelectForwardRunners(
             world,
             outfieldPlayers,
-            supportSet,
+            new HashSet<StringName>(supportSet.Concat(restDefenceSet)),
             world.BallOwnerId,
             world.ExpectedReceiverId);
         HashSet<StringName> runnerSet = new(runners);
@@ -86,6 +96,13 @@ public sealed class FootballIntentPlanner
                     world.BallDestination,
                     phase,
                     world.BallOwnerId);
+            }
+            else if (restDefenceSet.Contains(playerId))
+            {
+                intents[playerId] = new PlayerIntent(
+                    PlayerIntentKind.HoldShape,
+                    RestDefenceTargeter.Target(world, playerId, teamId),
+                    LiveTeamPhase.RestDefence);
             }
             else if (supportSet.Contains(playerId))
             {
@@ -224,13 +241,14 @@ public sealed class FootballIntentPlanner
         List<StringName> candidates,
         StringName ballOwnerId,
         StringName expectedReceiverId,
-        StringName previousBallOwnerId)
+        StringName previousBallOwnerId,
+        HashSet<StringName> excluded)
     {
         List<StringName> preferred = new();
         List<StringName> fallback = new();
         foreach (StringName playerId in candidates)
         {
-            if (playerId == ballOwnerId || playerId == expectedReceiverId)
+            if (playerId == ballOwnerId || playerId == expectedReceiverId || excluded.Contains(playerId))
             {
                 continue;
             }
@@ -288,6 +306,40 @@ public sealed class FootballIntentPlanner
         }
 
         return supportPlayers;
+    }
+
+    private static HashSet<StringName> SelectRestDefencePlayers(
+        FootballWorldSnapshot world,
+        StringName teamId,
+        List<StringName> candidates,
+        int requiredCount,
+        StringName ballOwnerId,
+        StringName expectedReceiverId)
+    {
+        List<StringName> eligible = candidates
+            .Where(playerId =>
+                playerId != ballOwnerId &&
+                playerId != expectedReceiverId &&
+                world.PlayerRoles[playerId] is "CB" or "LB" or "RB" or "DM")
+            .OrderBy(playerId => RestDefencePriority(world.PlayerRoles[playerId]))
+            .ThenBy(playerId => PlayerProximity.DistanceSquaredMeters(
+                world.Positions[playerId],
+                world.OwnGoal(teamId)))
+            .ThenBy(playerId => playerId.ToString(), StringComparer.Ordinal)
+            .Take(requiredCount)
+            .ToList();
+        return new HashSet<StringName>(eligible);
+    }
+
+    private static int RestDefencePriority(string role)
+    {
+        return role switch
+        {
+            "CB" => 0,
+            "DM" => 1,
+            "LB" or "RB" => 2,
+            _ => 3
+        };
     }
 
     private static List<StringName> ClosestPlayers(

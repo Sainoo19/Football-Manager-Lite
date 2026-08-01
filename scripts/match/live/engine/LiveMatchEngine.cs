@@ -41,7 +41,7 @@ public sealed partial class LiveMatchEngine
     private readonly PaceDictionary _playerPaces;
     private readonly NumberDictionary _playerNumbers;
     private readonly OffBallIntentCoordinator _offBallIntentCoordinator;
-    private readonly TeamPhaseCoordinator _teamPhaseCoordinator = new();
+    private readonly TeamPhaseCoordinator _teamPhaseCoordinator;
     private readonly FootballMovementController _movementController = new();
     private readonly MatchSideController _sideController = new();
     private readonly OffsideRule _offsideRule = new();
@@ -256,6 +256,7 @@ public sealed partial class LiveMatchEngine
             new GroundDuelResolver(configuration.GroundDuelFoulProbabilityMultiplier));
         _aerialDuelResolver = new AerialDuelResolver(configuration.HeaderShotProbability);
         _footballActionCoordinator = new FootballActionCoordinator(configuration.ActionSelection);
+        _teamPhaseCoordinator = new TeamPhaseCoordinator(configuration.TeamPhases);
         _offBallIntentCoordinator = new OffBallIntentCoordinator(new FootballIntentPlanner());
         _playerTeams = _state.PlayerTeams;
         _playerRoles = _state.PlayerRoles;
@@ -309,6 +310,7 @@ public sealed partial class LiveMatchEngine
             _ballActionActive,
             _state.IsLooseBallActive,
             _state.IsRestartPending ? _state.RestartType : new StringName(),
+            _teamPhaseCoordinator.CreateStateSnapshot(),
             new LiveMatchMetrics(
                 CompletedPasses,
                 PassAttempts,
@@ -475,6 +477,7 @@ public sealed partial class LiveMatchEngine
         SetTrackedPossession(simulation.home.team.id);
         SyncLineups(true);
         ResetPlayersForKickoff(_state.ActiveTeamId);
+        ResetTeamPhases();
         SelectPhasePlayers();
     }
 

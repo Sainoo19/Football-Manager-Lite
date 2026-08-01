@@ -95,7 +95,8 @@ public static class TeamSpacingResolver
     {
         Vector2 normalizedTarget = SpaceEvaluator.ClampToPitch(
             FootballPitchDimensions.ToNormalized(targetMeters));
-        if (intent.TeamPhase is LiveTeamPhase.InPossession or LiveTeamPhase.BallInFlight)
+        if (LiveTeamPhaseRules.IsPossessionPhase(intent.TeamPhase) ||
+            intent.TeamPhase == LiveTeamPhase.RestDefence)
         {
             StringName teamId = world.PlayerTeams[playerId];
             float attackDirection = world.AttackDirection(teamId);

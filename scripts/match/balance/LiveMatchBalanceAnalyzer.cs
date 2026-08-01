@@ -57,6 +57,7 @@ public sealed class LiveMatchBalanceAnalyzer
             CreateEventSequenceSignature(simulation),
             CreateFinalSnapshotSignature(snapshot),
             analytics.ActionMetrics,
+            analytics.TeamPhaseMetrics,
             goalRecords);
     }
 
@@ -119,6 +120,68 @@ public sealed class LiveMatchBalanceAnalyzer
                 "INVALID_GOAL_DISTANCE",
                 "Khoảng cách bàn thắng nằm ngoài kích thước sân.",
                 record.Seed);
+        }
+
+        ValidateTeamPhases(result, record, journal);
+    }
+
+    private static void ValidateTeamPhases(
+        HeadlessLiveMatchResult result,
+        LiveMatchBalanceRecord record,
+        BalanceIssueJournal journal)
+    {
+        TeamPhaseMetricsSnapshot phases = record.TeamPhaseMetrics;
+        if (phases.DurationSecondsByPhase.Values.Any(value => !float.IsFinite(value) || value < 0f))
+        {
+            journal.AddCodeBug(
+                BalanceIssueSeverity.Error,
+                "INVALID_PHASE_DURATION",
+                "Telemetry phase chứa thời lượng âm hoặc không hữu hạn.",
+                record.Seed);
+        }
+
+        float expectedTeamSeconds = (float)result.FinalSnapshot.ElapsedGameSeconds * 2f;
+        float observedTeamSeconds = phases.DurationSecondsByPhase.Values.Sum();
+        if (Math.Abs(observedTeamSeconds - expectedTeamSeconds) > 1f)
+        {
+            journal.AddCodeBug(
+                BalanceIssueSeverity.Error,
+                "PHASE_TIME_GAP",
+                "Tổng thời lượng phase của hai đội không phủ kín thời gian trận đấu.",
+                record.Seed,
+                "phase_seconds_total",
+                observedTeamSeconds,
+                expectedTeamSeconds.ToString(CultureInfo.InvariantCulture));
+        }
+
+        TeamPhaseConfiguration phaseConfiguration = TeamPhaseConfiguration.CreateM2Defaults();
+        if (phases.FinalThirdRestDefenceObservations > 0 &&
+            phases.AverageFinalThirdRestDefencePlayers + 0.001f < phaseConfiguration.MinimumRestDefencePlayers)
+        {
+            journal.AddCodeBug(
+                BalanceIssueSeverity.Error,
+                "REST_DEFENCE_INVARIANT",
+                "Đội tấn công không giữ đủ rest-defence khi có bóng ở final third.",
+                record.Seed,
+                "final_third_rest_defence_players",
+                phases.AverageFinalThirdRestDefencePlayers,
+                phaseConfiguration.MinimumRestDefencePlayers.ToString(CultureInfo.InvariantCulture));
+        }
+
+        float maximumOrganizationSeconds = phaseConfiguration.TransitionOrganizationSeconds +
+                                           LiveMatchEngineConfiguration.CreateFootballFundamentalsV1()
+                                               .PossessionIntentPlanningIntervalSeconds +
+                                           0.01f;
+        if (phases.AverageOrganizationSeconds > maximumOrganizationSeconds)
+        {
+            journal.AddCodeBug(
+                BalanceIssueSeverity.Error,
+                "DEFENSIVE_ORGANIZATION_TIMEOUT",
+                "Đội phòng ngự tổ chức lại chậm hơn transition window cộng một planning interval.",
+                record.Seed,
+                "time_to_organize_seconds",
+                phases.AverageOrganizationSeconds,
+                maximumOrganizationSeconds.ToString(CultureInfo.InvariantCulture));
         }
     }
 
@@ -256,6 +319,19 @@ public sealed class LiveMatchBalanceAnalyzer
                 .Append(',').Append(QuantizeForSignature(position.Y))
                 .Append('>').Append(QuantizeForSignature(target.X))
                 .Append(',').Append(QuantizeForSignature(target.Y));
+        }
+
+        foreach ((StringName teamId, TeamPhaseState state) in snapshot.TeamPhases
+                     .OrderBy(pair => pair.Key.ToString(), StringComparer.Ordinal))
+        {
+            builder.Append("|phase:").Append(teamId)
+                .Append(':').Append(state.Phase)
+                .Append(':').Append(state.RequiredRestDefencePlayers);
+        }
+        foreach ((string transition, int count) in snapshot.Analytics.TeamPhaseMetrics.TransitionCounts
+                     .OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            builder.Append("|transition:").Append(transition).Append(':').Append(count);
         }
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));

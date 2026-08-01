@@ -16,6 +16,7 @@ public sealed partial class LiveMatchEngine
 
         ResetCarrySequence();
         StringName shootingTeamId = _playerTeams[shooterId];
+        _teamPhaseCoordinator.RecordShot(shootingTeamId);
         StringName defendingTeamId = shootingTeamId == Simulation.home.team.id
             ? Simulation.away.team.id
             : Simulation.home.team.id;

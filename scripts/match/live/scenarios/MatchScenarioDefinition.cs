@@ -26,7 +26,8 @@ public sealed class MatchScenarioDefinition
         Vector2 ballCarrierPosition,
         IReadOnlyList<Vector2> supportingAttackerPositions,
         IReadOnlyList<Vector2> defenderPositions,
-        Vector2? throughBallReceptionTarget = null)
+        Vector2? throughBallReceptionTarget = null,
+        bool startsAfterTurnover = false)
     {
         Kind = kind;
         DisplayName = displayName;
@@ -34,6 +35,7 @@ public sealed class MatchScenarioDefinition
         SupportingAttackerPositions = supportingAttackerPositions;
         DefenderPositions = defenderPositions;
         ThroughBallReceptionTarget = throughBallReceptionTarget;
+        StartsAfterTurnover = startsAfterTurnover;
     }
 
     public MatchScenarioKind Kind { get; }
@@ -45,4 +47,5 @@ public sealed class MatchScenarioDefinition
     public int AttackerCount => SupportingAttackerPositions.Count + 1;
     public int DefenderCount => DefenderPositions.Count;
     public bool StartsWithThroughBall => ThroughBallReceptionTarget.HasValue;
+    public bool StartsAfterTurnover { get; }
 }

@@ -116,7 +116,7 @@ public sealed partial class LiveMatchEngine
             _playerRoles[ownerId],
             ownerPosition,
             attackingGoal,
-            LiveTeamPhase.InPossession,
+            _teamPhaseCoordinator.PhaseFor(_playerTeams[ownerId]),
             _attackProgress,
             isUnderPressure,
             pressureDistanceMeters,

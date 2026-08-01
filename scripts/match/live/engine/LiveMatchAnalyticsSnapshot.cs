@@ -27,6 +27,7 @@ public sealed class LiveMatchAnalyticsSnapshot
         int freeKicks,
         int penalties,
         FootballActionMetricsSnapshot actionMetrics,
+        TeamPhaseMetricsSnapshot teamPhaseMetrics,
         IReadOnlyList<LiveGoalRecord> goals)
     {
         PossessionChanges = possessionChanges;
@@ -39,6 +40,7 @@ public sealed class LiveMatchAnalyticsSnapshot
         FreeKicks = freeKicks;
         Penalties = penalties;
         ActionMetrics = actionMetrics;
+        TeamPhaseMetrics = teamPhaseMetrics;
         Goals = new ReadOnlyCollection<LiveGoalRecord>(new List<LiveGoalRecord>(goals));
     }
 
@@ -55,5 +57,6 @@ public sealed class LiveMatchAnalyticsSnapshot
     public int FreeKicks { get; }
     public int Penalties { get; }
     public FootballActionMetricsSnapshot ActionMetrics { get; }
+    public TeamPhaseMetricsSnapshot TeamPhaseMetrics { get; }
     public IReadOnlyList<LiveGoalRecord> Goals { get; }
 }

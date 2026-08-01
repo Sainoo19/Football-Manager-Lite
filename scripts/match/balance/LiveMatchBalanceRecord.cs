@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 
 public sealed class BalanceGoalRecord
 {
@@ -45,6 +46,7 @@ public sealed class LiveMatchBalanceRecord
         string eventSequenceSignature,
         string finalSnapshotSignature,
         FootballActionMetricsSnapshot actionMetrics,
+        TeamPhaseMetricsSnapshot teamPhaseMetrics,
         IReadOnlyList<BalanceGoalRecord> goalRecords)
     {
         MatchIndex = matchIndex;
@@ -76,6 +78,7 @@ public sealed class LiveMatchBalanceRecord
         EventSequenceSignature = eventSequenceSignature;
         FinalSnapshotSignature = finalSnapshotSignature;
         ActionMetrics = actionMetrics;
+        TeamPhaseMetrics = teamPhaseMetrics;
         GoalRecords = new ReadOnlyCollection<BalanceGoalRecord>(new List<BalanceGoalRecord>(goalRecords));
     }
 
@@ -108,6 +111,7 @@ public sealed class LiveMatchBalanceRecord
     public string EventSequenceSignature { get; }
     public string FinalSnapshotSignature { get; }
     public FootballActionMetricsSnapshot ActionMetrics { get; }
+    public TeamPhaseMetricsSnapshot TeamPhaseMetrics { get; }
     public IReadOnlyList<BalanceGoalRecord> GoalRecords { get; }
     public double ShotConversion => Shots == 0 ? 0d : (double)Goals / Shots;
     public double PassCompletion => PassAttempts == 0 ? 0d : (double)CompletedPasses / PassAttempts;
@@ -149,6 +153,17 @@ public sealed class LiveMatchBalanceRecord
         metrics["forced_actions"] = ActionMetrics.ForcedActions;
         metrics["decision_cancellations"] = ActionMetrics.DecisionCancellations;
         metrics["no_valid_actions"] = ActionMetrics.NoValidActions;
+        foreach (LiveTeamPhase phase in System.Enum.GetValues<LiveTeamPhase>())
+        {
+            metrics[$"phase_seconds_{phase.ToString().ToLowerInvariant()}"] =
+                TeamPhaseMetrics.DurationSecondsByPhase.GetValueOrDefault(phase);
+        }
+        metrics["phase_transitions"] = TeamPhaseMetrics.TransitionCounts.Values.Sum();
+        metrics["counter_attacks"] = TeamPhaseMetrics.CounterAttacks;
+        metrics["counter_attack_conversion"] = TeamPhaseMetrics.CounterAttackConversion;
+        metrics["time_to_organize_seconds"] = TeamPhaseMetrics.AverageOrganizationSeconds;
+        metrics["final_third_rest_defence_players"] = TeamPhaseMetrics.AverageFinalThirdRestDefencePlayers;
+        metrics["emergency_defence_entries"] = TeamPhaseMetrics.EmergencyDefenceEntries;
         return metrics;
     }
 }

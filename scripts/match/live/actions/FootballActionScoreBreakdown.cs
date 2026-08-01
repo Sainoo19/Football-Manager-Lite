@@ -8,6 +8,7 @@ public readonly struct FootballActionScoreBreakdown
         float pressureRelief,
         float turnoverRisk,
         float executionDifficulty,
+        float phaseFit,
         float deterministicVariation,
         float commitment)
     {
@@ -18,6 +19,7 @@ public readonly struct FootballActionScoreBreakdown
         PressureRelief = pressureRelief;
         TurnoverRisk = turnoverRisk;
         ExecutionDifficulty = executionDifficulty;
+        PhaseFit = phaseFit;
         DeterministicVariation = deterministicVariation;
         Commitment = commitment;
     }
@@ -29,8 +31,9 @@ public readonly struct FootballActionScoreBreakdown
     public float PressureRelief { get; }
     public float TurnoverRisk { get; }
     public float ExecutionDifficulty { get; }
+    public float PhaseFit { get; }
     public float DeterministicVariation { get; }
     public float Commitment { get; }
     public float Total => BaseValue + Progression + PossessionSecurity + Threat + PressureRelief -
-                          TurnoverRisk - ExecutionDifficulty + DeterministicVariation + Commitment;
+                          TurnoverRisk - ExecutionDifficulty + PhaseFit + DeterministicVariation + Commitment;
 }

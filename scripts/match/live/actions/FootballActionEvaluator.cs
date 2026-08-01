@@ -21,6 +21,7 @@ public sealed class FootballActionEvaluator
         float pressureRelief = PressureRelief(context, candidate);
         float turnoverRisk = candidate.TurnoverRisk * RiskWeight(candidate.ActionType);
         float executionDifficulty = candidate.ExecutionDifficulty * 0.34f;
+        float phaseFit = PhaseFit(context, candidate);
 
         if (candidate.ActionType == FootballActionType.Carry && HasClearAdvantageOutlet(context))
         {
@@ -46,6 +47,7 @@ public sealed class FootballActionEvaluator
             pressureRelief,
             turnoverRisk,
             executionDifficulty,
+            phaseFit,
             variation,
             0f));
     }
@@ -61,6 +63,7 @@ public sealed class FootballActionEvaluator
             score.PressureRelief,
             score.TurnoverRisk,
             score.ExecutionDifficulty,
+            score.PhaseFit,
             score.DeterministicVariation,
             _configuration.CommitmentBonus));
     }
@@ -120,6 +123,37 @@ public sealed class FootballActionEvaluator
             FootballActionType.ProtectBall => 0.24f,
             FootballActionType.Carry => -0.18f,
             FootballActionType.Hold => -0.28f,
+            _ => 0f
+        };
+    }
+
+    private float PhaseFit(FootballActionContext context, FootballActionCandidate candidate)
+    {
+        return context.TeamPhase switch
+        {
+            LiveTeamPhase.CounterAttack when
+                (candidate.ActionType is FootballActionType.Carry or
+                    FootballActionType.ThroughBall or
+                    FootballActionType.GroundPass) &&
+                candidate.ExpectedProgressionMeters >= 4f =>
+                _configuration.CounterAttackProgressionBonus,
+            LiveTeamPhase.CounterAttack when candidate.ExpectedProgressionMeters < -3f =>
+                -_configuration.CounterAttackProgressionBonus,
+            LiveTeamPhase.BuildUp when
+                (candidate.ActionType is FootballActionType.GroundPass or
+                    FootballActionType.GoalkeeperDistribution) &&
+                candidate.ReceiverControlProbability >= 0.60f =>
+                _configuration.BuildUpSecurityBonus,
+            LiveTeamPhase.FinalThird when
+                candidate.ActionType is FootballActionType.Shot or
+                    FootballActionType.Cross or
+                    FootballActionType.ThroughBall =>
+                _configuration.FinalThirdThreatBonus,
+            LiveTeamPhase.TransitionToAttack when
+                candidate.ActionType is FootballActionType.GroundPass or
+                    FootballActionType.ProtectBall or
+                    FootballActionType.Hold =>
+                _configuration.TransitionSecurityBonus,
             _ => 0f
         };
     }

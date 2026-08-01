@@ -19,13 +19,15 @@ public sealed class MatchScenarioFactory
                 "Phản công 2 đánh 1",
                 new Vector2(0.640f, 0.43f),
                 new List<Vector2> { new(0.655f, 0.67f) },
-                new List<Vector2> { new(0.770f, 0.53f) }),
+                new List<Vector2> { new(0.770f, 0.53f) },
+                startsAfterTurnover: true),
             MatchScenarioKind.ThreeAttackersVersusTwoDefenders => new MatchScenarioDefinition(
                 kind,
                 "Phản công 3 đánh 2",
                 new Vector2(0.610f, 0.50f),
                 new List<Vector2> { new(0.660f, 0.32f), new(0.670f, 0.68f) },
-                new List<Vector2> { new(0.760f, 0.41f), new(0.770f, 0.60f) }),
+                new List<Vector2> { new(0.760f, 0.41f), new(0.770f, 0.60f) },
+                startsAfterTurnover: true),
             MatchScenarioKind.GoalkeeperBuildUp => new MatchScenarioDefinition(
                 kind,
                 "Thủ môn triển khai bóng từ sân nhà",
@@ -130,7 +132,8 @@ public sealed class MatchScenarioFactory
             defenders,
             source.ThroughBallReceptionTarget.HasValue
                 ? Mirror(source.ThroughBallReceptionTarget.Value)
-                : null);
+                : null,
+            source.StartsAfterTurnover);
     }
 
     private static Vector2 Mirror(Vector2 position) => new(1f - position.X, position.Y);

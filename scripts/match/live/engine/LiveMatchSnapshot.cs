@@ -98,6 +98,7 @@ public sealed class LiveMatchSnapshot
         bool isBallInFlight,
         bool isLooseBall,
         StringName pendingRestartType,
+        IReadOnlyDictionary<StringName, TeamPhaseState> teamPhases,
         LiveMatchMetrics metrics,
         LiveMatchAnalyticsSnapshot analytics)
     {
@@ -113,6 +114,8 @@ public sealed class LiveMatchSnapshot
         IsBallInFlight = isBallInFlight;
         IsLooseBall = isLooseBall;
         PendingRestartType = pendingRestartType;
+        TeamPhases = new ReadOnlyDictionary<StringName, TeamPhaseState>(
+            new Dictionary<StringName, TeamPhaseState>(teamPhases));
         Metrics = metrics;
         Analytics = analytics;
     }
@@ -129,6 +132,7 @@ public sealed class LiveMatchSnapshot
     public bool IsBallInFlight { get; }
     public bool IsLooseBall { get; }
     public StringName PendingRestartType { get; }
+    public IReadOnlyDictionary<StringName, TeamPhaseState> TeamPhases { get; }
     public LiveMatchMetrics Metrics { get; }
     public LiveMatchAnalyticsSnapshot Analytics { get; }
 

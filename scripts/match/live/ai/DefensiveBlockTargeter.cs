@@ -104,6 +104,26 @@ public static class DefensiveBlockTargeter
         return LimitDisplacement(shapeTarget, shapeTarget.Lerp(lanePoint, 0.55f), 7f);
     }
 
+    public static Vector2 RecoveryTarget(
+        FootballWorldSnapshot world,
+        StringName playerId,
+        StringName teamId)
+    {
+        Vector2 shapeTarget = ShapeTarget(world, playerId, teamId);
+        Vector2 current = world.Positions[playerId];
+        Vector2 ownGoal = world.OwnGoal(teamId);
+        bool isGoalSide = FootballPitchDimensions.DistanceMeters(current, ownGoal) <=
+                          FootballPitchDimensions.DistanceMeters(world.BallPosition, ownGoal);
+        if (isGoalSide)
+        {
+            return current.Lerp(shapeTarget, 0.48f);
+        }
+        Vector2 recoveryLane = new Vector2(
+            Mathf.Lerp(current.X, shapeTarget.X, 0.78f),
+            Mathf.Lerp(current.Y, shapeTarget.Y, 0.42f));
+        return LimitDisplacement(current, recoveryLane, 10f);
+    }
+
     private static Vector2 LimitDisplacement(Vector2 origin, Vector2 target, float maximumDistanceMeters)
     {
         Vector2 originMeters = FootballPitchDimensions.ToMeters(origin);

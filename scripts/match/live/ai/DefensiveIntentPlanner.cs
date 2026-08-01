@@ -8,7 +8,7 @@ public static class DefensiveIntentPlanner
         StringName teamId,
         Dictionary<StringName, PlayerIntent> intents)
     {
-        LiveTeamPhase phase = LiveTeamPhase.Defending;
+        LiveTeamPhase phase = world.PhaseFor(teamId);
         List<StringName> outfieldPlayers = FootballIntentPlanner.TeamOutfieldPlayers(world, teamId);
         outfieldPlayers.Sort((first, second) =>
         {
@@ -142,9 +142,12 @@ public static class DefensiveIntentPlanner
                 continue;
             }
 
+            bool isRecovery = phase == LiveTeamPhase.TransitionToDefence;
             intents[playerId] = new PlayerIntent(
-                PlayerIntentKind.HoldShape,
-                DefensiveBlockTargeter.ShapeTarget(world, playerId, teamId),
+                isRecovery ? PlayerIntentKind.RecoverGoalSide : PlayerIntentKind.HoldShape,
+                isRecovery
+                    ? DefensiveBlockTargeter.RecoveryTarget(world, playerId, teamId)
+                    : DefensiveBlockTargeter.ShapeTarget(world, playerId, teamId),
                 phase);
         }
     }

@@ -55,6 +55,7 @@ public sealed partial class LiveMatchEngine
 
         _attackProgress = AttackProgress(_state.ActiveTeamId, BallPosition);
         _phaseLane = BallPosition.Y;
+        UpdateTeamPhases();
 
         FootballWorldSnapshot world = new(
             CurrentPositions,
@@ -72,7 +73,8 @@ public sealed partial class LiveMatchEngine
             _sideController.HomeAttacksLeft,
             _ballActionActive && _ballActionKind == BallActionKind.Shot,
             _ballActionActive && _ballActionKind == BallActionKind.Cross,
-            _state.PossessionSequence.PreviousOwnerId);
+            _state.PossessionSequence.PreviousOwnerId,
+            _teamPhaseCoordinator.CreateStateSnapshot());
         System.Collections.Generic.Dictionary<StringName, PlayerIntent> planned =
             _offBallIntentCoordinator.Plan(world);
 
@@ -103,6 +105,20 @@ public sealed partial class LiveMatchEngine
             }
         }
         ApplyAerialContestTargets();
+
+        int restDefencePlayers = 0;
+        foreach ((StringName playerId, PlayerIntent intent) in _playerIntents)
+        {
+            if (_playerTeams[playerId] == _state.ActiveTeamId &&
+                intent.TeamPhase == LiveTeamPhase.RestDefence)
+            {
+                restDefencePlayers++;
+            }
+        }
+        if (!_state.IsLooseBallActive)
+        {
+            _teamPhaseCoordinator.ObserveRestDefence(_state.ActiveTeamId, restDefencePlayers);
+        }
 
         float planningInterval = _teamPhaseCoordinator.PlanningInterval(
             _configuration,
@@ -141,6 +157,7 @@ public sealed partial class LiveMatchEngine
         {
             _nextIntentPlanTime = 0f;
         }
+        UpdateTeamPhases();
     }
 
     private void SelectPhasePlayers()

@@ -45,6 +45,7 @@ public static class BalanceBatchTests
             new Dictionary<string, int>(),
             new Dictionary<string, int>(),
             new Dictionary<string, int>(),
+            new Dictionary<string, int>(),
             uniqueEventSequences: 10);
         BalanceIssueJournal journal = new();
         new LiveMatchBalanceAnalyzer().ValidateSummary(summary, configuration, journal);
