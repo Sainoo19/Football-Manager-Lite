@@ -11,7 +11,7 @@ public sealed partial class LiveMatchEngine
         _teamPhaseCoordinator.CreateStateSnapshot();
 
     public TeamPhaseMetricsSnapshot TeamPhaseMetrics =>
-        _teamPhaseCoordinator.CreateMetricsSnapshot(_state.VisualTime);
+        _teamPhaseCoordinator.CreateMetricsSnapshot((float)_simulationTimeSeconds);
 
     private void ResetTeamPhases()
     {
@@ -20,11 +20,11 @@ public sealed partial class LiveMatchEngine
             return;
         }
         _lastPhaseBallPosition = BallPosition;
-        _lastPhaseObservationTime = _state.VisualTime;
+        _lastPhaseObservationTime = (float)_simulationTimeSeconds;
         _teamPhaseCoordinator.Reset(
             new[] { Simulation.home.team.id, Simulation.away.team.id },
             _state.ActiveTeamId,
-            _state.VisualTime);
+            (float)_simulationTimeSeconds);
         UpdateTeamPhases();
     }
 
@@ -35,7 +35,8 @@ public sealed partial class LiveMatchEngine
             return;
         }
 
-        float elapsed = Math.Max(_state.VisualTime - _lastPhaseObservationTime, 0f);
+        float currentTime = (float)_simulationTimeSeconds;
+        float elapsed = Math.Max(currentTime - _lastPhaseObservationTime, 0f);
         Vector2 previousBallMeters = FootballPitchDimensions.ToMeters(_lastPhaseBallPosition);
         Vector2 currentBallMeters = FootballPitchDimensions.ToMeters(BallPosition);
         foreach (StringName teamId in new[] { Simulation.home.team.id, Simulation.away.team.id })
@@ -47,7 +48,7 @@ public sealed partial class LiveMatchEngine
             _teamPhaseCoordinator.Update(CreateTeamPhaseContext(teamId, progressionSpeed));
         }
         _lastPhaseBallPosition = BallPosition;
-        _lastPhaseObservationTime = _state.VisualTime;
+        _lastPhaseObservationTime = currentTime;
     }
 
     private TeamPhaseContext CreateTeamPhaseContext(StringName teamId, float progressionSpeed)
@@ -119,7 +120,7 @@ public sealed partial class LiveMatchEngine
             hasPossession,
             _state.IsRestartPending || _kickoffPassPending,
             _state.IsLooseBallActive,
-            _state.VisualTime,
+            (float)_simulationTimeSeconds,
             AttackProgress(teamId, BallPosition),
             possessionDuration,
             ahead,

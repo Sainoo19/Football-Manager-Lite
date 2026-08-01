@@ -132,7 +132,8 @@ public sealed partial class LiveMatchEngine
             FreeKicksTaken,
             PenaltiesTaken,
             _footballActionCoordinator.Metrics,
-            _teamPhaseCoordinator.CreateMetricsSnapshot(_state.VisualTime),
+            _teamPhaseCoordinator.CreateMetricsSnapshot((float)_simulationTimeSeconds),
+            _offBallIntentCoordinator.Metrics,
             _goalRecords);
     }
 }

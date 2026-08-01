@@ -36,18 +36,24 @@ public sealed class PlayerIntent
         PlayerIntentKind kind,
         Vector2 target,
         LiveTeamPhase teamPhase,
-        StringName? relatedPlayerId = null)
+        StringName? relatedPlayerId = null,
+        OffBallAssignmentKind assignment = OffBallAssignmentKind.None,
+        string targetKey = "")
     {
         Kind = kind;
         Target = target;
         TeamPhase = teamPhase;
         RelatedPlayerId = relatedPlayerId ?? new StringName();
+        Assignment = assignment;
+        TargetKey = targetKey;
     }
 
     public PlayerIntentKind Kind { get; }
     public Vector2 Target { get; }
     public LiveTeamPhase TeamPhase { get; }
     public StringName RelatedPlayerId { get; }
+    public OffBallAssignmentKind Assignment { get; }
+    public string TargetKey { get; }
 }
 
 public sealed class FootballWorldSnapshot
@@ -70,6 +76,47 @@ public sealed class FootballWorldSnapshot
         bool isCrossInFlight = false,
         StringName? previousBallOwnerId = null,
         IReadOnlyDictionary<StringName, TeamPhaseState>? teamPhaseStates = null)
+        : this(
+            positions,
+            basePositions,
+            playerTeams,
+            playerRoles,
+            ballPosition,
+            ballDestination,
+            ballOwnerId,
+            expectedReceiverId,
+            possessionTeamId,
+            homeTeamId,
+            isBallInFlight,
+            isLooseBall,
+            homeAttacksLeft,
+            isShotInFlight,
+            isCrossInFlight,
+            previousBallOwnerId,
+            teamPhaseStates,
+            0f)
+    {
+    }
+
+    public FootballWorldSnapshot(
+        IReadOnlyDictionary<StringName, Vector2> positions,
+        IReadOnlyDictionary<StringName, Vector2> basePositions,
+        IReadOnlyDictionary<StringName, StringName> playerTeams,
+        IReadOnlyDictionary<StringName, string> playerRoles,
+        Vector2 ballPosition,
+        Vector2 ballDestination,
+        StringName ballOwnerId,
+        StringName expectedReceiverId,
+        StringName possessionTeamId,
+        StringName homeTeamId,
+        bool isBallInFlight,
+        bool isLooseBall,
+        bool homeAttacksLeft,
+        bool isShotInFlight,
+        bool isCrossInFlight,
+        StringName? previousBallOwnerId,
+        IReadOnlyDictionary<StringName, TeamPhaseState>? teamPhaseStates,
+        float gameTimeSeconds)
     {
         Positions = positions;
         BasePositions = basePositions;
@@ -88,6 +135,7 @@ public sealed class FootballWorldSnapshot
         IsCrossInFlight = isCrossInFlight;
         PreviousBallOwnerId = previousBallOwnerId ?? new StringName();
         TeamPhaseStates = teamPhaseStates;
+        GameTimeSeconds = gameTimeSeconds;
     }
 
     public IReadOnlyDictionary<StringName, Vector2> Positions { get; }
@@ -107,6 +155,7 @@ public sealed class FootballWorldSnapshot
     public bool IsCrossInFlight { get; }
     public StringName PreviousBallOwnerId { get; }
     public IReadOnlyDictionary<StringName, TeamPhaseState>? TeamPhaseStates { get; }
+    public float GameTimeSeconds { get; }
 
     public float AttackDirection(StringName teamId)
     {

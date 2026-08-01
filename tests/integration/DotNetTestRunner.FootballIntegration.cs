@@ -40,6 +40,8 @@ public partial class DotNetTestRunner : Node
             M1ProductionPipelineIntegrationTests.Run();
             TeamPhaseCoordinatorTests.Run();
             M2PhaseIntegrationTests.Run();
+            OffBallRoleAllocatorTests.Run();
+            M3OffBallIntegrationTests.Run();
             AerialBallScenarioIntegrationTests.Run();
             TestPitchMovement();
             LiveMatchEngineIntegrationTests.Run();

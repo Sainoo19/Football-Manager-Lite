@@ -74,7 +74,8 @@ public sealed partial class LiveMatchEngine
             _ballActionActive && _ballActionKind == BallActionKind.Shot,
             _ballActionActive && _ballActionKind == BallActionKind.Cross,
             _state.PossessionSequence.PreviousOwnerId,
-            _teamPhaseCoordinator.CreateStateSnapshot());
+            _teamPhaseCoordinator.CreateStateSnapshot(),
+            (float)_simulationTimeSeconds);
         System.Collections.Generic.Dictionary<StringName, PlayerIntent> planned =
             _offBallIntentCoordinator.Plan(world);
 

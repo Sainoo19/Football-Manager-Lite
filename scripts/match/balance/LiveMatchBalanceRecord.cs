@@ -47,6 +47,7 @@ public sealed class LiveMatchBalanceRecord
         string finalSnapshotSignature,
         FootballActionMetricsSnapshot actionMetrics,
         TeamPhaseMetricsSnapshot teamPhaseMetrics,
+        OffBallMetricsSnapshot offBallMetrics,
         IReadOnlyList<BalanceGoalRecord> goalRecords)
     {
         MatchIndex = matchIndex;
@@ -79,6 +80,7 @@ public sealed class LiveMatchBalanceRecord
         FinalSnapshotSignature = finalSnapshotSignature;
         ActionMetrics = actionMetrics;
         TeamPhaseMetrics = teamPhaseMetrics;
+        OffBallMetrics = offBallMetrics;
         GoalRecords = new ReadOnlyCollection<BalanceGoalRecord>(new List<BalanceGoalRecord>(goalRecords));
     }
 
@@ -112,6 +114,7 @@ public sealed class LiveMatchBalanceRecord
     public string FinalSnapshotSignature { get; }
     public FootballActionMetricsSnapshot ActionMetrics { get; }
     public TeamPhaseMetricsSnapshot TeamPhaseMetrics { get; }
+    public OffBallMetricsSnapshot OffBallMetrics { get; }
     public IReadOnlyList<BalanceGoalRecord> GoalRecords { get; }
     public double ShotConversion => Shots == 0 ? 0d : (double)Goals / Shots;
     public double PassCompletion => PassAttempts == 0 ? 0d : (double)CompletedPasses / PassAttempts;
@@ -164,6 +167,17 @@ public sealed class LiveMatchBalanceRecord
         metrics["time_to_organize_seconds"] = TeamPhaseMetrics.AverageOrganizationSeconds;
         metrics["final_third_rest_defence_players"] = TeamPhaseMetrics.AverageFinalThirdRestDefencePlayers;
         metrics["emergency_defence_entries"] = TeamPhaseMetrics.EmergencyDefenceEntries;
+        metrics["team_width_meters"] = OffBallMetrics.AverageTeamWidthMeters;
+        metrics["team_length_meters"] = OffBallMetrics.AverageTeamLengthMeters;
+        metrics["team_compactness_meters"] = OffBallMetrics.AverageCompactnessMeters;
+        metrics["same_target_collisions"] = OffBallMetrics.SameTargetCollisions;
+        metrics["passing_options"] = OffBallMetrics.AveragePassingOptions;
+        metrics["runner_lane_diversity"] = OffBallMetrics.AverageRunnerLaneDiversity;
+        metrics["off_ball_rest_defence_players"] = OffBallMetrics.AverageRestDefencePlayers;
+        metrics["unmarked_dangerous_receivers"] = OffBallMetrics.AverageUnmarkedDangerousReceivers;
+        metrics["box_near_post_occupations"] = OffBallMetrics.NearPostOccupations;
+        metrics["box_far_post_occupations"] = OffBallMetrics.FarPostOccupations;
+        metrics["box_cutback_occupations"] = OffBallMetrics.CutBackOccupations;
         return metrics;
     }
 }

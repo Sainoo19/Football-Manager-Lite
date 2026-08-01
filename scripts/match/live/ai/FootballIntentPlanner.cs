@@ -1,181 +1,25 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Godot;
 
 public sealed class FootballIntentPlanner
 {
-    private const int SupportPlayerCount = 3;
-    private const int ForwardRunnerCount = 3;
-    private const int LooseBallChaserCount = 1;
     private static readonly TraditionalGoalkeeperPlanner GoalkeeperPlanner = new();
+    private readonly OffBallRoleAllocator _allocator;
+
+    public FootballIntentPlanner()
+        : this(new OffBallRoleAllocator(OffBallParticipationConfiguration.CreateM3Defaults()))
+    {
+    }
+
+    public FootballIntentPlanner(OffBallRoleAllocator allocator)
+    {
+        _allocator = allocator ?? throw new ArgumentNullException(nameof(allocator));
+    }
 
     public Dictionary<StringName, PlayerIntent> Plan(FootballWorldSnapshot world)
     {
-        Dictionary<StringName, PlayerIntent> intents = new();
-        List<StringName> teamIds = new();
-        foreach (StringName playerId in world.Positions.Keys)
-        {
-            StringName teamId = world.PlayerTeams[playerId];
-            if (!teamIds.Contains(teamId))
-            {
-                teamIds.Add(teamId);
-            }
-        }
-        teamIds.Sort(ComparePlayerIds);
-
-        foreach (StringName teamId in teamIds)
-        {
-            LiveTeamPhase phase = world.PhaseFor(teamId);
-            if (phase == LiveTeamPhase.LooseBall)
-            {
-                PlanLooseBallTeam(world, teamId, intents);
-            }
-            else if (LiveTeamPhaseRules.IsPossessionPhase(phase) ||
-                     phase == LiveTeamPhase.SetPiece && teamId == world.PossessionTeamId)
-            {
-                PlanPossessionTeam(world, teamId, phase, intents);
-            }
-            else
-            {
-                DefensiveIntentPlanner.Plan(world, teamId, intents);
-            }
-        }
-
-        TeamSpacingResolver.Resolve(world, intents);
-        return intents;
-    }
-
-    private static void PlanPossessionTeam(
-        FootballWorldSnapshot world,
-        StringName teamId,
-        LiveTeamPhase phase,
-        Dictionary<StringName, PlayerIntent> intents)
-    {
-        List<StringName> outfieldPlayers = TeamOutfieldPlayers(world, teamId);
-        HashSet<StringName> restDefenceSet = SelectRestDefencePlayers(
-            world,
-            teamId,
-            outfieldPlayers,
-            world.RequiredRestDefencePlayersFor(teamId),
-            world.BallOwnerId,
-            world.ExpectedReceiverId);
-        List<StringName> supportPlayers = SelectSupportPlayers(
-            world,
-            outfieldPlayers,
-            world.BallOwnerId,
-            world.ExpectedReceiverId,
-            world.PreviousBallOwnerId,
-            restDefenceSet);
-        HashSet<StringName> supportSet = new(supportPlayers);
-        List<StringName> runners = SelectForwardRunners(
-            world,
-            outfieldPlayers,
-            new HashSet<StringName>(supportSet.Concat(restDefenceSet)),
-            world.BallOwnerId,
-            world.ExpectedReceiverId);
-        HashSet<StringName> runnerSet = new(runners);
-
-        int supportIndex = 0;
-        foreach (StringName playerId in TeamPlayers(world, teamId))
-        {
-            string role = world.PlayerRoles[playerId];
-            if (role == "GK")
-            {
-                intents[playerId] = GoalkeeperIntent(world, playerId, teamId, phase);
-            }
-            else if (playerId == world.BallOwnerId)
-            {
-                Vector2 target = AttackingRoleTargeter.CarrierTarget(world, playerId, teamId);
-                intents[playerId] = new PlayerIntent(PlayerIntentKind.CarryBall, target, phase);
-            }
-            else if (playerId == world.ExpectedReceiverId && world.IsBallInFlight)
-            {
-                intents[playerId] = new PlayerIntent(
-                    PlayerIntentKind.ReceivePass,
-                    world.BallDestination,
-                    phase,
-                    world.BallOwnerId);
-            }
-            else if (restDefenceSet.Contains(playerId))
-            {
-                intents[playerId] = new PlayerIntent(
-                    PlayerIntentKind.HoldShape,
-                    RestDefenceTargeter.Target(world, playerId, teamId),
-                    LiveTeamPhase.RestDefence);
-            }
-            else if (supportSet.Contains(playerId))
-            {
-                Vector2 target = AttackingRoleTargeter.SupportTarget(world, playerId, teamId, supportIndex++);
-                intents[playerId] = new PlayerIntent(
-                    PlayerIntentKind.SupportBall,
-                    target,
-                    phase,
-                    world.BallOwnerId);
-            }
-            else if (runnerSet.Contains(playerId))
-            {
-                Vector2 target = AttackingRoleTargeter.RunnerTarget(world, playerId, teamId);
-                intents[playerId] = new PlayerIntent(PlayerIntentKind.RunIntoSpace, target, phase);
-            }
-            else
-            {
-                intents[playerId] = new PlayerIntent(
-                    PlayerIntentKind.HoldShape,
-                    ShiftBaseTowardBall(world, playerId, 0.20f),
-                    phase);
-            }
-        }
-    }
-
-    private static void PlanLooseBallTeam(
-        FootballWorldSnapshot world,
-        StringName teamId,
-        Dictionary<StringName, PlayerIntent> intents)
-    {
-        StringName goalkeeperId = new();
-        foreach (StringName playerId in TeamPlayers(world, teamId))
-        {
-            if (world.PlayerRoles[playerId] == "GK")
-            {
-                goalkeeperId = playerId;
-                break;
-            }
-        }
-        bool goalkeeperClaims = goalkeeperId != new StringName() &&
-                                GoalkeeperPlanner.ShouldClaimLooseBall(world, goalkeeperId, teamId);
-        List<StringName> outfieldPlayers = TeamOutfieldPlayers(world, teamId);
-        List<StringName> chasers = goalkeeperClaims
-            ? new List<StringName>()
-            : ClosestPlayers(world, outfieldPlayers, world.BallPosition, LooseBallChaserCount);
-        HashSet<StringName> chaserSet = new(chasers);
-
-        foreach (StringName playerId in TeamPlayers(world, teamId))
-        {
-            if (world.PlayerRoles[playerId] == "GK")
-            {
-                intents[playerId] = goalkeeperClaims
-                    ? new PlayerIntent(
-                        PlayerIntentKind.ChaseLooseBall,
-                        world.BallPosition,
-                        LiveTeamPhase.LooseBall)
-                    : GoalkeeperIntent(world, playerId, teamId, LiveTeamPhase.LooseBall);
-            }
-            else if (chaserSet.Contains(playerId))
-            {
-                intents[playerId] = new PlayerIntent(
-                    PlayerIntentKind.ChaseLooseBall,
-                    world.BallPosition,
-                    LiveTeamPhase.LooseBall);
-            }
-            else
-            {
-                intents[playerId] = new PlayerIntent(
-                    PlayerIntentKind.HoldShape,
-                    ShiftBaseTowardBall(world, playerId, 0.24f),
-                    LiveTeamPhase.LooseBall);
-            }
-        }
+        return _allocator.Allocate(world);
     }
 
     internal static PlayerIntent GoalkeeperIntent(
@@ -189,7 +33,13 @@ public sealed class FootballIntentPlanner
         PlayerIntentKind intentKind = rushesControlledBall
             ? PlayerIntentKind.CloseDownBall
             : PlayerIntentKind.Goalkeep;
-        return new PlayerIntent(intentKind, target, phase, world.BallOwnerId);
+        return new PlayerIntent(
+            intentKind,
+            target,
+            phase,
+            world.BallOwnerId,
+            OffBallAssignmentKind.Goalkeep,
+            "goalkeeper");
     }
 
     internal static Vector2 ShiftBaseTowardBall(FootballWorldSnapshot world, StringName playerId, float weight)
@@ -197,183 +47,6 @@ public sealed class FootballIntentPlanner
         Vector2 basePosition = world.BasePositions[playerId];
         Vector2 shiftedBall = new(world.BallPosition.X, Mathf.Lerp(basePosition.Y, world.BallPosition.Y, 0.55f));
         return SpaceEvaluator.ClampToPitch(basePosition.Lerp(shiftedBall, weight));
-    }
-
-    private static List<StringName> SelectForwardRunners(
-        FootballWorldSnapshot world,
-        List<StringName> candidates,
-        HashSet<StringName> excluded,
-        StringName ballOwnerId,
-        StringName expectedReceiverId)
-    {
-        List<StringName> runners = new();
-        foreach (StringName playerId in candidates)
-        {
-            if (excluded.Contains(playerId) || playerId == ballOwnerId || playerId == expectedReceiverId)
-            {
-                continue;
-            }
-
-            if (IsAttackingRole(world.PlayerRoles[playerId]))
-            {
-                runners.Add(playerId);
-            }
-        }
-
-        runners.Sort((first, second) =>
-        {
-            int priorityComparison = RunnerPriority(world.PlayerRoles[second])
-                .CompareTo(RunnerPriority(world.PlayerRoles[first]));
-            return priorityComparison != 0
-                ? priorityComparison
-                : ComparePlayerIds(first, second);
-        });
-        if (runners.Count > ForwardRunnerCount)
-        {
-            runners.RemoveRange(ForwardRunnerCount, runners.Count - ForwardRunnerCount);
-        }
-
-        return runners;
-    }
-
-    private static List<StringName> SelectSupportPlayers(
-        FootballWorldSnapshot world,
-        List<StringName> candidates,
-        StringName ballOwnerId,
-        StringName expectedReceiverId,
-        StringName previousBallOwnerId,
-        HashSet<StringName> excluded)
-    {
-        List<StringName> preferred = new();
-        List<StringName> fallback = new();
-        foreach (StringName playerId in candidates)
-        {
-            if (playerId == ballOwnerId || playerId == expectedReceiverId || excluded.Contains(playerId))
-            {
-                continue;
-            }
-
-            fallback.Add(playerId);
-            if (world.PlayerRoles[playerId] is "LB" or "RB" or "DM" or "CM" or "AM")
-            {
-                preferred.Add(playerId);
-            }
-        }
-
-        Comparison<StringName> byBallDistance = (first, second) =>
-        {
-            int distanceComparison =
-                PlayerProximity.DistanceSquaredMeters(world.Positions[first], world.BallPosition)
-                    .CompareTo(PlayerProximity.DistanceSquaredMeters(
-                        world.Positions[second],
-                        world.BallPosition));
-            return distanceComparison != 0
-                ? distanceComparison
-                : ComparePlayerIds(first, second);
-        };
-        preferred.Sort(byBallDistance);
-        fallback.Sort(byBallDistance);
-
-        List<StringName> supportPlayers = new();
-        if (previousBallOwnerId != new StringName() &&
-            previousBallOwnerId != ballOwnerId &&
-            previousBallOwnerId != expectedReceiverId &&
-            fallback.Contains(previousBallOwnerId))
-        {
-            supportPlayers.Add(previousBallOwnerId);
-        }
-        foreach (StringName playerId in preferred)
-        {
-            if (supportPlayers.Count >= SupportPlayerCount)
-            {
-                break;
-            }
-
-            supportPlayers.Add(playerId);
-        }
-
-        foreach (StringName playerId in fallback)
-        {
-            if (supportPlayers.Count >= SupportPlayerCount)
-            {
-                break;
-            }
-
-            if (!supportPlayers.Contains(playerId))
-            {
-                supportPlayers.Add(playerId);
-            }
-        }
-
-        return supportPlayers;
-    }
-
-    private static HashSet<StringName> SelectRestDefencePlayers(
-        FootballWorldSnapshot world,
-        StringName teamId,
-        List<StringName> candidates,
-        int requiredCount,
-        StringName ballOwnerId,
-        StringName expectedReceiverId)
-    {
-        List<StringName> eligible = candidates
-            .Where(playerId =>
-                playerId != ballOwnerId &&
-                playerId != expectedReceiverId &&
-                world.PlayerRoles[playerId] is "CB" or "LB" or "RB" or "DM")
-            .OrderBy(playerId => RestDefencePriority(world.PlayerRoles[playerId]))
-            .ThenBy(playerId => PlayerProximity.DistanceSquaredMeters(
-                world.Positions[playerId],
-                world.OwnGoal(teamId)))
-            .ThenBy(playerId => playerId.ToString(), StringComparer.Ordinal)
-            .Take(requiredCount)
-            .ToList();
-        return new HashSet<StringName>(eligible);
-    }
-
-    private static int RestDefencePriority(string role)
-    {
-        return role switch
-        {
-            "CB" => 0,
-            "DM" => 1,
-            "LB" or "RB" => 2,
-            _ => 3
-        };
-    }
-
-    private static List<StringName> ClosestPlayers(
-        FootballWorldSnapshot world,
-        List<StringName> candidates,
-        Vector2 point,
-        int count,
-        StringName? excludedFirst = null,
-        StringName? excludedSecond = null)
-    {
-        List<StringName> result = new();
-        foreach (StringName playerId in candidates)
-        {
-            if ((excludedFirst is null || playerId != excludedFirst) &&
-                (excludedSecond is null || playerId != excludedSecond))
-            {
-                result.Add(playerId);
-            }
-        }
-
-        result.Sort((first, second) =>
-        {
-            int distanceComparison = PlayerProximity.DistanceSquaredMeters(world.Positions[first], point)
-                .CompareTo(PlayerProximity.DistanceSquaredMeters(world.Positions[second], point));
-            return distanceComparison != 0
-                ? distanceComparison
-                : ComparePlayerIds(first, second);
-        });
-        if (result.Count > count)
-        {
-            result.RemoveRange(count, result.Count - count);
-        }
-
-        return result;
     }
 
     internal static List<StringName> TeamPlayers(FootballWorldSnapshot world, StringName teamId)
@@ -387,7 +60,6 @@ public sealed class FootballIntentPlanner
             }
         }
         players.Sort(ComparePlayerIds);
-
         return players;
     }
 
@@ -397,17 +69,6 @@ public sealed class FootballIntentPlanner
         players.RemoveAll(playerId => world.PlayerRoles[playerId] == "GK");
         return players;
     }
-
-    private static bool IsAttackingRole(string role) => role is "CM" or "AM" or "LW" or "RW" or "ST";
-
-    private static int RunnerPriority(string role) => role switch
-    {
-        "ST" => 5,
-        "LW" or "RW" => 4,
-        "AM" => 3,
-        "CM" => 2,
-        _ => 1
-    };
 
     internal static int ComparePlayerIds(StringName first, StringName second)
     {

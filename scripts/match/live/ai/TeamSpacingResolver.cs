@@ -4,7 +4,7 @@ using Godot;
 public static class TeamSpacingResolver
 {
     private const float MinimumSpacingMeters = 6.5f;
-    private const int ResolutionIterations = 8;
+    private const int ResolutionIterations = 6;
 
     public static void Resolve(
         FootballWorldSnapshot world,
@@ -68,6 +68,46 @@ public static class TeamSpacingResolver
         {
             intents[secondId] = WithTarget(world, secondId, secondIntent, secondMeters + direction * secondPush);
         }
+        EnsureDepthSeparation(world, intents, firstId, secondId, firstAnchored, secondAnchored);
+    }
+
+    private static void EnsureDepthSeparation(
+        FootballWorldSnapshot world,
+        Dictionary<StringName, PlayerIntent> intents,
+        StringName firstId,
+        StringName secondId,
+        bool firstAnchored,
+        bool secondAnchored)
+    {
+        PlayerIntent firstIntent = intents[firstId];
+        PlayerIntent secondIntent = intents[secondId];
+        Vector2 firstMeters = FootballPitchDimensions.ToMeters(firstIntent.Target);
+        Vector2 secondMeters = FootballPitchDimensions.ToMeters(secondIntent.Target);
+        float distance = firstMeters.DistanceTo(secondMeters);
+        if (distance >= MinimumSpacingMeters || firstAnchored && secondAnchored)
+        {
+            return;
+        }
+
+        float missingDistance = MinimumSpacingMeters - distance + 0.05f;
+        float attackDirection = world.AttackDirection(world.PlayerTeams[firstId]);
+        if (!firstAnchored && secondAnchored)
+        {
+            firstMeters.X -= attackDirection * missingDistance;
+            intents[firstId] = WithTarget(world, firstId, firstIntent, firstMeters);
+        }
+        else if (firstAnchored && !secondAnchored)
+        {
+            secondMeters.X -= attackDirection * missingDistance;
+            intents[secondId] = WithTarget(world, secondId, secondIntent, secondMeters);
+        }
+        else
+        {
+            firstMeters.X -= attackDirection * missingDistance * 0.5f;
+            secondMeters.X += attackDirection * missingDistance * 0.5f;
+            intents[firstId] = WithTarget(world, firstId, firstIntent, firstMeters);
+            intents[secondId] = WithTarget(world, secondId, secondIntent, secondMeters);
+        }
     }
 
     private static Vector2 SeparationDirection(
@@ -114,7 +154,9 @@ public static class TeamSpacingResolver
             intent.Kind,
             normalizedTarget,
             intent.TeamPhase,
-            intent.RelatedPlayerId);
+            intent.RelatedPlayerId,
+            intent.Assignment,
+            SpaceOccupationMap.ZoneFor(normalizedTarget).Key);
     }
 
     private static bool IsAnchored(PlayerIntentKind kind) => kind is

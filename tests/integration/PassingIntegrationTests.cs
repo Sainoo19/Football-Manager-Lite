@@ -157,9 +157,13 @@ public partial class DotNetTestRunner : Node
             true);
         System.Collections.Generic.Dictionary<StringName, PlayerIntent> looseBallIntents =
             new FootballIntentPlanner().Plan(looseBallWorld);
+        int firstTeamChasers = looseBallIntents.Count(pair =>
+            playerTeams[pair.Key] == firstTeamId && pair.Value.Kind == PlayerIntentKind.ChaseLooseBall);
+        int secondTeamChasers = looseBallIntents.Count(pair =>
+            playerTeams[pair.Key] == secondTeamId && pair.Value.Kind == PlayerIntentKind.ChaseLooseBall);
         Check(
-            looseBallIntents.Count(pair => pair.Value.Kind == PlayerIntentKind.ChaseLooseBall) == 2,
-            "Bóng tự do phải có đúng người gần nhất của mỗi đội cùng lao vào tranh.");
+            firstTeamChasers is >= 1 and <= 2 && secondTeamChasers is >= 1 and <= 2,
+            "Bóng tự do phải cấp động một hoặc hai người mỗi đội tùy mật độ quanh bóng.");
         Check(
             looseBallIntents["first_cf"].Kind == PlayerIntentKind.ChaseLooseBall &&
             looseBallIntents["second_cf"].Kind == PlayerIntentKind.ChaseLooseBall,

@@ -26,7 +26,8 @@ public sealed class LiveMatchEngineConfiguration
         int maximumDirectAttackActions,
         float bookedPlayerChallengeProbability,
         FootballActionSelectionConfiguration actionSelection,
-        TeamPhaseConfiguration teamPhases)
+        TeamPhaseConfiguration teamPhases,
+        OffBallParticipationConfiguration offBallParticipation)
     {
         if (fixedStepSeconds <= 0d)
         {
@@ -62,6 +63,8 @@ public sealed class LiveMatchEngineConfiguration
         ActionSelection = actionSelection ??
             throw new ArgumentNullException(nameof(actionSelection));
         TeamPhases = teamPhases ?? throw new ArgumentNullException(nameof(teamPhases));
+        OffBallParticipation = offBallParticipation ??
+            throw new ArgumentNullException(nameof(offBallParticipation));
     }
 
     public double FixedStepSeconds { get; }
@@ -88,6 +91,7 @@ public sealed class LiveMatchEngineConfiguration
     public float BookedPlayerChallengeProbability { get; }
     public FootballActionSelectionConfiguration ActionSelection { get; }
     public TeamPhaseConfiguration TeamPhases { get; }
+    public OffBallParticipationConfiguration OffBallParticipation { get; }
 
     public static LiveMatchEngineConfiguration CreateFootballFundamentalsV1()
     {
@@ -115,6 +119,7 @@ public sealed class LiveMatchEngineConfiguration
             maximumDirectAttackActions: 3,
             bookedPlayerChallengeProbability: 0.25f,
             actionSelection: FootballActionSelectionConfiguration.CreateM1Defaults(),
-            teamPhases: TeamPhaseConfiguration.CreateM2Defaults());
+            teamPhases: TeamPhaseConfiguration.CreateM2Defaults(),
+            offBallParticipation: OffBallParticipationConfiguration.CreateM3Defaults());
     }
 }

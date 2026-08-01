@@ -121,6 +121,7 @@ public sealed partial class LiveMatchEngine
     private float _totalPossessionSpellSeconds;
     private int _possessionSpellCount;
     private double _synchronizedGameSeconds;
+    private double _simulationTimeSeconds;
     private double _fixedStepAccumulatorSeconds;
     private readonly List<LiveGoalRecord> _goalRecords = new();
     private float _pendingShotDistanceMeters;
@@ -166,6 +167,7 @@ public sealed partial class LiveMatchEngine
     public int MaximumPossessionParticipants { get; private set; }
     public FootballActionDecision? LastActionDecision { get; private set; }
     public FootballActionMetricsSnapshot ActionMetrics => _footballActionCoordinator.Metrics;
+    public OffBallMetricsSnapshot OffBallMetrics => _offBallIntentCoordinator.Metrics;
     public float MinimumObservedGroundDuelSeparationMeters { get; private set; } = float.PositiveInfinity;
     public bool IsKickoffPassPending => _kickoffPassPending;
     public StringName KickoffReceiverId => _kickoffReceiverId;
@@ -257,7 +259,10 @@ public sealed partial class LiveMatchEngine
         _aerialDuelResolver = new AerialDuelResolver(configuration.HeaderShotProbability);
         _footballActionCoordinator = new FootballActionCoordinator(configuration.ActionSelection);
         _teamPhaseCoordinator = new TeamPhaseCoordinator(configuration.TeamPhases);
-        _offBallIntentCoordinator = new OffBallIntentCoordinator(new FootballIntentPlanner());
+        OffBallRoleAllocator roleAllocator = new(configuration.OffBallParticipation);
+        _offBallIntentCoordinator = new OffBallIntentCoordinator(
+            new FootballIntentPlanner(roleAllocator),
+            configuration.OffBallParticipation);
         _playerTeams = _state.PlayerTeams;
         _playerRoles = _state.PlayerRoles;
         _playerSlotIds = _state.PlayerSlotIds;
@@ -365,6 +370,7 @@ public sealed partial class LiveMatchEngine
         _playerPaces.Clear();
         _playerNumbers.Clear();
         _playerIntents.Clear();
+        _offBallIntentCoordinator.Reset();
         _interceptionAttemptedBy.Clear();
         _state.PendingCardActions.Clear();
         _state.DefenderChallengeReadyTimes.Clear();
@@ -373,6 +379,7 @@ public sealed partial class LiveMatchEngine
         _sideController.Reset();
         _state.VisualTime = 0;
         _synchronizedGameSeconds = 0d;
+        _simulationTimeSeconds = 0d;
         _fixedStepAccumulatorSeconds = 0d;
         _lastPassTime = -10;
         _attackProgress = 0.22f;
@@ -636,6 +643,7 @@ public sealed partial class LiveMatchEngine
 
     private void AdvanceSimulationStep(float delta)
     {
+        _simulationTimeSeconds += _configuration.FixedStepSeconds;
         _state.VisualTime += delta;
         UpdateRestartBallPresentation();
         bool waitingForKickoff = _state.IsRestartPending && _state.RestartType == "kickoff";

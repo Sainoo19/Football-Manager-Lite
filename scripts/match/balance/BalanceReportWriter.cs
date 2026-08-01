@@ -105,7 +105,10 @@ public sealed class BalanceReportWriter
             "backward_passes,sideways_passes,forward_passes,progressive_action_rate,forced_actions," +
             "decision_cancellations,no_valid_actions,phase_transitions,counter_attacks," +
             "counter_attack_conversion,time_to_organize_seconds,final_third_rest_defence_players," +
-            "emergency_defence_entries,event_sequence_signature," +
+            "emergency_defence_entries,team_width_meters,team_length_meters,team_compactness_meters," +
+            "same_target_collisions,passing_options,runner_lane_diversity,off_ball_rest_defence_players," +
+            "unmarked_dangerous_receivers,box_near_post_occupations,box_far_post_occupations," +
+            "box_cutback_occupations,event_sequence_signature," +
             "final_snapshot_signature");
         foreach (LiveMatchBalanceRecord record in records)
         {
@@ -152,6 +155,17 @@ public sealed class BalanceReportWriter
                 .Append(Format(record.TeamPhaseMetrics.AverageOrganizationSeconds)).Append(',')
                 .Append(Format(record.TeamPhaseMetrics.AverageFinalThirdRestDefencePlayers)).Append(',')
                 .Append(record.TeamPhaseMetrics.EmergencyDefenceEntries).Append(',')
+                .Append(Format(record.OffBallMetrics.AverageTeamWidthMeters)).Append(',')
+                .Append(Format(record.OffBallMetrics.AverageTeamLengthMeters)).Append(',')
+                .Append(Format(record.OffBallMetrics.AverageCompactnessMeters)).Append(',')
+                .Append(record.OffBallMetrics.SameTargetCollisions).Append(',')
+                .Append(Format(record.OffBallMetrics.AveragePassingOptions)).Append(',')
+                .Append(Format(record.OffBallMetrics.AverageRunnerLaneDiversity)).Append(',')
+                .Append(Format(record.OffBallMetrics.AverageRestDefencePlayers)).Append(',')
+                .Append(Format(record.OffBallMetrics.AverageUnmarkedDangerousReceivers)).Append(',')
+                .Append(record.OffBallMetrics.NearPostOccupations).Append(',')
+                .Append(record.OffBallMetrics.FarPostOccupations).Append(',')
+                .Append(record.OffBallMetrics.CutBackOccupations).Append(',')
                 .Append(record.EventSequenceSignature).Append(',')
                 .Append(record.FinalSnapshotSignature)
                 .AppendLine();
@@ -296,6 +310,34 @@ public sealed class BalanceReportWriter
         {
             report.Append("- ").Append(transition).Append(": ").Append(count).AppendLine();
         }
+
+        report.AppendLine()
+            .AppendLine("## M3 dynamic off-ball participation")
+            .AppendLine()
+            .AppendLine("| Metric | Trung bình / trận |")
+            .AppendLine("|---|---:|")
+            .Append("| Team width | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("team_width_meters"))).AppendLine(" m |")
+            .Append("| Team length | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("team_length_meters"))).AppendLine(" m |")
+            .Append("| Compactness | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("team_compactness_meters"))).AppendLine(" m |")
+            .Append("| Same-target collisions | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("same_target_collisions"))).AppendLine(" |")
+            .Append("| Passing options around carrier | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("passing_options"))).AppendLine(" |")
+            .Append("| Runner lane diversity | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("runner_lane_diversity"))).AppendLine(" |")
+            .Append("| Rest-defence players | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("off_ball_rest_defence_players"))).AppendLine(" |")
+            .Append("| Unmarked dangerous receivers | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("unmarked_dangerous_receivers"))).AppendLine(" |")
+            .Append("| Near-post occupations | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("box_near_post_occupations"))).AppendLine(" |")
+            .Append("| Far-post occupations | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("box_far_post_occupations"))).AppendLine(" |")
+            .Append("| Cut-back occupations | ")
+            .Append(Format(summary.MetricAverages.GetValueOrDefault("box_cutback_occupations"))).AppendLine(" |");
 
         report.AppendLine()
             .AppendLine("## Goals by distance")

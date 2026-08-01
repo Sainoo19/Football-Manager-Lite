@@ -81,7 +81,7 @@ public sealed partial class LiveMatchEngine
             _teamPhaseCoordinator.Reset(
                 new[] { attackingTeamId, defendingTeamId },
                 defendingTeamId,
-                _state.VisualTime);
+                (float)_simulationTimeSeconds);
         }
         SetTrackedPossession(attackingTeamId);
         _attackProgress = AttackProgress(attackingTeamId, BallPosition);
@@ -124,6 +124,7 @@ public sealed partial class LiveMatchEngine
         ClearDirectAttack();
         _movementController.Reset();
         _playerIntents.Clear();
+        _offBallIntentCoordinator.Reset();
         _interceptionAttemptedBy.Clear();
         _ballActionActive = false;
         _aerialFlightActive = false;

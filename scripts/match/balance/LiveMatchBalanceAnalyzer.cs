@@ -58,6 +58,7 @@ public sealed class LiveMatchBalanceAnalyzer
             CreateFinalSnapshotSignature(snapshot),
             analytics.ActionMetrics,
             analytics.TeamPhaseMetrics,
+            analytics.OffBallMetrics,
             goalRecords);
     }
 
@@ -123,6 +124,32 @@ public sealed class LiveMatchBalanceAnalyzer
         }
 
         ValidateTeamPhases(result, record, journal);
+        ValidateOffBallMetrics(record, journal);
+    }
+
+    private static void ValidateOffBallMetrics(
+        LiveMatchBalanceRecord record,
+        BalanceIssueJournal journal)
+    {
+        OffBallMetricsSnapshot metrics = record.OffBallMetrics;
+        float[] averages =
+        {
+            metrics.AverageTeamWidthMeters,
+            metrics.AverageTeamLengthMeters,
+            metrics.AverageCompactnessMeters,
+            metrics.AveragePassingOptions,
+            metrics.AverageRunnerLaneDiversity,
+            metrics.AverageRestDefencePlayers,
+            metrics.AverageUnmarkedDangerousReceivers
+        };
+        if (metrics.Observations <= 0 || averages.Any(value => !float.IsFinite(value) || value < 0f))
+        {
+            journal.AddCodeBug(
+                BalanceIssueSeverity.Error,
+                "INVALID_OFF_BALL_TELEMETRY",
+                "Telemetry M3 thiếu observation hoặc chứa giá trị âm/không hữu hạn.",
+                record.Seed);
+        }
     }
 
     private static void ValidateTeamPhases(

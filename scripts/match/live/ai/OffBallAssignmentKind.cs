@@ -1,0 +1,28 @@
+public enum OffBallAssignmentKind
+{
+    None,
+    Goalkeep,
+    CarryBall,
+    ReceivePass,
+    OfferShortSupport,
+    OfferThirdManSupport,
+    RunBehind,
+    RunAcrossDefender,
+    OccupyWideLane,
+    AttackBoxNearPost,
+    AttackBoxFarPost,
+    AttackBoxCutBackZone,
+    HoldWidth,
+    RecyclePossession,
+    ProtectAgainstCounter,
+    PressBall,
+    CoverPresser,
+    BlockPrimaryLane,
+    TrackRunner,
+    ProtectBox,
+    RecoverGoalSide,
+    HoldLine,
+    ClaimSecondBallZone,
+    ChaseLooseBall,
+    HoldShape
+}

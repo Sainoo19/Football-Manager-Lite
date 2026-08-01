@@ -7,7 +7,7 @@ using System.Text;
 
 public static class LiveMatchEngineIdentity
 {
-    public const string EngineVersion = "2.2.0-m2";
+    public const string EngineVersion = "2.3.0-m3";
 
     public static string ConfigurationFingerprint(LiveMatchEngineConfiguration configuration)
     {

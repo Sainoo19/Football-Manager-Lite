@@ -79,20 +79,29 @@ public partial class DotNetTestRunner : Node
             .Where(id => teams[id] == awayTeamId && roles[id] != "GK")
             .ToArray();
         float closestTeammateTargets = float.PositiveInfinity;
+        string closestPair = string.Empty;
         for (int first = 0; first < attackingOutfield.Length; first++)
         {
             for (int second = first + 1; second < attackingOutfield.Length; second++)
             {
-                closestTeammateTargets = Mathf.Min(
-                    closestTeammateTargets,
-                    FootballPitchDimensions.DistanceMeters(
-                        planned[attackingOutfield[first]].Target,
-                        planned[attackingOutfield[second]].Target));
+                float pairDistance = FootballPitchDimensions.DistanceMeters(
+                    planned[attackingOutfield[first]].Target,
+                    planned[attackingOutfield[second]].Target);
+                if (pairDistance < closestTeammateTargets)
+                {
+                    closestTeammateTargets = pairDistance;
+                    closestPair = $"{attackingOutfield[first]}-{attackingOutfield[second]}";
+                }
             }
         }
+        PlayerIntent awayRightWingIntent = planned["away_rw"];
+        PlayerIntent awayStrikerIntent = planned["away_st"];
         Check(
             closestTeammateTargets >= 5.8f,
-            "Đội tấn công phải tạo góc chuyền thay vì để nhiều mục tiêu di chuyển chụm một điểm.");
+            $"Đội tấn công phải tạo góc chuyền thay vì để nhiều mục tiêu di chuyển chụm một điểm; " +
+            $"closest={closestTeammateTargets:0.00}m ({closestPair}), " +
+            $"RW={awayRightWingIntent.Kind}/{awayRightWingIntent.Assignment}@{awayRightWingIntent.Target}, " +
+            $"ST={awayStrikerIntent.Kind}/{awayStrikerIntent.Assignment}@{awayStrikerIntent.Target}.");
 
         StringName[] markedPlayers = planned
             .Where(pair => teams[pair.Key] == homeTeamId && pair.Value.Kind == PlayerIntentKind.MarkOpponent)
@@ -303,4 +312,3 @@ public partial class DotNetTestRunner : Node
         GD.Print("PASS: 22 cầu thủ có ý định riêng, hỗ trợ, chạy chỗ, pressing, bọc lót và chơi bóng.");
     }
 }
-
