@@ -129,7 +129,7 @@ public partial class DotNetTestRunner : Node
         var positions = new System.Collections.Generic.Dictionary<StringName, Vector2>
         {
             [goalkeeperId] = new Vector2(0.05f, 0.50f),
-            [shooterId] = new Vector2(0.25f, 0.30f)
+            [shooterId] = new Vector2(0.25f, 0.45f)
         };
         var basePositions = positions.ToDictionary(pair => pair.Key, pair => pair.Value);
         var playerTeams = new System.Collections.Generic.Dictionary<StringName, StringName>
@@ -148,7 +148,7 @@ public partial class DotNetTestRunner : Node
             playerTeams,
             roles,
             positions[shooterId],
-            new Vector2(0.015f, 0.60f),
+            new Vector2(0.015f, 0.54f),
             new StringName(),
             new StringName(),
             homeTeamId,
@@ -163,9 +163,14 @@ public partial class DotNetTestRunner : Node
             goalkeeperId,
             awayTeamId,
             LiveTeamPhase.Defending);
+        float interceptionProgress = (goalkeeperIntent.Target.X - shotWorld.BallPosition.X) /
+                                     (shotWorld.BallDestination.X - shotWorld.BallPosition.X);
+        float expectedInterceptionY = Mathf.Lerp(shotWorld.BallPosition.Y, shotWorld.BallDestination.Y,
+            interceptionProgress);
         Check(
-            goalkeeperIntent.Target.Y > 0.56f,
-            "Thủ môn phải đổ về phía điểm đến của cú sút thay vì đứng bất động giữa khung thành.");
+            goalkeeperIntent.Target.Y > positions[goalkeeperId].Y &&
+            Mathf.Abs(goalkeeperIntent.Target.Y - expectedInterceptionY) < 0.001f,
+            "Thủ môn phải di chuyển đến đường sút ở độ sâu mình đứng để đón bóng.");
         Check(
             goalkeeperIntent.Target.X > shotWorld.OwnGoal(awayTeamId).X,
             "Thủ môn truyền thống phải đứng hơi cao hơn vạch vôi để tham gia pha bóng.");

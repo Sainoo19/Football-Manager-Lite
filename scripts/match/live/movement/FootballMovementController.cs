@@ -8,10 +8,20 @@ public sealed class FootballMovementController
     private const float ArrivalRadiusMeters = 0.8f;
 
     private readonly Dictionary<StringName, Vector2> _velocitiesMetersPerSecond = new();
+    private readonly Dictionary<StringName, Vector2> _previousPositions = new();
+    private readonly Dictionary<StringName, Vector2> _previousVelocities = new();
+    private readonly List<StringName> _orderedPlayers = new();
+    private readonly PlayerCollisionResolver _collisionResolver = new();
 
     public IReadOnlyDictionary<StringName, Vector2> VelocitiesMetersPerSecond => _velocitiesMetersPerSecond;
 
-    public void Reset() => _velocitiesMetersPerSecond.Clear();
+    public void Reset()
+    {
+        _velocitiesMetersPerSecond.Clear();
+        _previousPositions.Clear();
+        _previousVelocities.Clear();
+        _orderedPlayers.Clear();
+    }
 
     public void EnsurePlayer(StringName playerId)
     {
@@ -35,7 +45,18 @@ public sealed class FootballMovementController
             return;
         }
 
-        foreach (StringName playerId in positions.Keys)
+        _orderedPlayers.Clear();
+        _previousPositions.Clear();
+        _previousVelocities.Clear();
+        foreach ((StringName playerId, Vector2 position) in positions)
+        {
+            EnsurePlayer(playerId);
+            _orderedPlayers.Add(playerId);
+            _previousPositions[playerId] = position;
+            _previousVelocities[playerId] = _velocitiesMetersPerSecond[playerId];
+        }
+        _orderedPlayers.Sort(FootballIntentPlanner.ComparePlayerIds);
+        foreach (StringName playerId in _orderedPlayers)
         {
             if (!targets.TryGetValue(playerId, out Vector2 target))
             {
@@ -54,28 +75,31 @@ public sealed class FootballMovementController
                 intentKind,
                 pace,
                 delta,
+                playerId,
                 out Vector2 updatedVelocity);
             _velocitiesMetersPerSecond[playerId] = updatedVelocity;
         }
+        _collisionResolver.Resolve(positions, _previousPositions, _velocitiesMetersPerSecond, _orderedPlayers);
     }
 
-    private static Vector2 AdvancePlayer(
+    private Vector2 AdvancePlayer(
         Vector2 normalizedPosition,
         Vector2 normalizedTarget,
         Vector2 currentVelocity,
         PlayerIntentKind intentKind,
         int paceRating,
         float delta,
+        StringName playerId,
         out Vector2 updatedVelocity)
     {
         Vector2 positionMeters = FootballPitchDimensions.ToMeters(normalizedPosition);
         Vector2 targetMeters = FootballPitchDimensions.ToMeters(normalizedTarget);
         Vector2 displacement = targetMeters - positionMeters;
         float distance = displacement.Length();
-        if (distance <= 0.05f)
+        if (distance <= 0.05f && currentVelocity.Length() <= NormalAccelerationMetersPerSecondSquared * delta)
         {
             updatedVelocity = currentVelocity.MoveToward(Vector2.Zero, NormalAccelerationMetersPerSecondSquared * delta);
-            return normalizedTarget;
+            return PlayerPitchBoundary.Clamp(normalizedTarget);
         }
 
         float acceleration = IsSprintIntent(intentKind)
@@ -90,15 +114,18 @@ public sealed class FootballMovementController
         }
 
         Vector2 desiredVelocity = displacement.Normalized() * desiredSpeed;
+        desiredVelocity = _collisionResolver.AvoidPlayers(playerId, normalizedPosition, desiredVelocity,
+            _previousPositions, _previousVelocities);
         updatedVelocity = currentVelocity.MoveToward(desiredVelocity, acceleration * delta);
         Vector2 step = updatedVelocity * delta;
-        if (step.Length() > distance)
+        if (step.Dot(displacement) > 0f && step.Length() >= distance &&
+            step.Normalized().Dot(displacement.Normalized()) > 0.99f)
         {
             updatedVelocity = Vector2.Zero;
-            return normalizedTarget;
+            return PlayerPitchBoundary.Clamp(normalizedTarget);
         }
 
-        return SpaceEvaluator.ClampToPitch(
+        return PlayerPitchBoundary.Clamp(
             FootballPitchDimensions.ToNormalized(positionMeters + step));
     }
 

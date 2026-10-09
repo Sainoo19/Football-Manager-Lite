@@ -2,7 +2,7 @@ using Godot;
 
 public static class DefensiveBlockTargeter
 {
-    private const float MinimumBlockDepth = 0.10f;
+    private const float MinimumBlockDepth = 0.005f;
     private const float MaximumBlockDepth = 0.30f;
     private const float MaximumMarkingDisplacementMeters = 5.5f;
 
@@ -33,6 +33,8 @@ public static class DefensiveBlockTargeter
             "ST" => 0.235f,
             _ => 0.12f
         };
+        // Recover toward the goal when play enters the box rather than leaving a fixed line behind the ball.
+        roleDepth *= Mathf.Clamp(ballDepth / 0.22f, 0.05f, 1f);
         float laneShift = role is "CB" or "LB" or "RB" ? 0.12f : 0.22f;
         float targetLane = Mathf.Lerp(world.BasePositions[playerId].Y, world.BallPosition.Y, laneShift);
         return SpaceEvaluator.ClampToPitch(new Vector2(
@@ -64,6 +66,11 @@ public static class DefensiveBlockTargeter
         Vector2 goalSideDirection = (
             FootballPitchDimensions.ToMeters(world.OwnGoal(teamId)) - opponentMeters).Normalized();
         Vector2 goalSideTarget = FootballPitchDimensions.ToNormalized(opponentMeters + goalSideDirection * 2.5f);
+        if (FootballPitchDimensions.DistanceMeters(opponentPosition, world.OwnGoal(teamId)) <= 30f)
+        {
+            return PlayerPitchBoundary.Clamp(FootballPitchDimensions.ToNormalized(
+                opponentMeters + goalSideDirection * 1.4f));
+        }
         Vector2 markingTarget = shapeTarget.Lerp(goalSideTarget, 0.34f);
         return LimitDisplacement(shapeTarget, markingTarget, MaximumMarkingDisplacementMeters);
     }

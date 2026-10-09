@@ -121,14 +121,15 @@ public sealed partial class LiveMatchEngine
 
     private void ResolveRollingBallOut(Vector2 outPosition)
     {
-        if (Simulation is null || _actionSourceTeamId == new StringName())
+        StringName lastTouchTeamId = _lastBallTouch.TeamId;
+        if (Simulation is null || lastTouchTeamId == new StringName())
         {
             BallPosition = ClampToPitch(outPosition);
             _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
             return;
         }
 
-        StringName opposingTeamId = _actionSourceTeamId == Simulation.home.team.id
+        StringName opposingTeamId = lastTouchTeamId == Simulation.home.team.id
             ? Simulation.away.team.id
             : Simulation.home.team.id;
         if (outPosition.Y is < 0f or > 1f)
@@ -148,7 +149,7 @@ public sealed partial class LiveMatchEngine
         Vector2 goalLinePosition = new(
             leftGoalLine ? 0.018f : 0.982f,
             Mathf.Clamp(outPosition.Y, 0.035f, 0.965f));
-        if (_actionSourceTeamId == defendingGoalTeamId)
+        if (lastTouchTeamId == defendingGoalTeamId)
         {
             StringName cornerTeamId = defendingGoalTeamId == Simulation.home.team.id
                 ? Simulation.away.team.id

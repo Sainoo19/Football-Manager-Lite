@@ -86,6 +86,7 @@ public sealed class OffBallIntentCoordinator
         {
             TeamSpacingResolver.Resolve(world, planned);
         }
+        OnsideRunPlanner.ConstrainTargets(world, planned);
         Observe(world, planned);
         return planned;
     }
@@ -134,7 +135,13 @@ public sealed class OffBallIntentCoordinator
             world.GameTimeSeconds < previous.ExpiresAt &&
             CanRetain(world, playerId, previous.Intent, next))
         {
-            planned[playerId] = previous.Intent;
+            // Retain the marker identity, not an obsolete location of a moving opponent.
+            planned[playerId] = previous.Intent.Assignment == OffBallAssignmentKind.TrackRunner
+                ? new PlayerIntent(previous.Intent.Kind,
+                    DefensiveBlockTargeter.MarkTarget(world, playerId, world.PlayerTeams[playerId],
+                        previous.Intent.RelatedPlayerId), previous.Intent.TeamPhase,
+                    previous.Intent.RelatedPlayerId, previous.Intent.Assignment)
+                : previous.Intent;
             return true;
         }
         _committed[playerId] = new CommittedIntent(
@@ -299,7 +306,7 @@ public sealed class OffBallIntentCoordinator
                 {
                     continue;
                 }
-                if (intent.RelatedPlayerId == attackerId || FootballPitchDimensions.DistanceMeters(
+                if (FootballPitchDimensions.DistanceMeters(
                         world.Positions[defenderId],
                         attackerPosition) <= _configuration.MarkerControlDistanceMeters)
                 {

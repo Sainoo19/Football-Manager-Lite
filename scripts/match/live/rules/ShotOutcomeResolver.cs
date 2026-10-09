@@ -38,21 +38,8 @@ public sealed class ShotOutcomeResolver
         float cornerRoll)
     {
         goalkeeperCoverage = Mathf.Clamp(goalkeeperCoverage, 0f, 1f);
-        float distanceFactor = Mathf.Clamp((distanceMeters - 8f) / 26f, 0f, 1f);
-        float onTargetChance = Mathf.Lerp(0.74f, 0.20f, distanceFactor) +
-                               (finishing - 65) / 180f -
-                               angleFactor * 0.22f +
-                               (1f - goalkeeperCoverage) * 0.16f;
-        if (pressureDistanceMeters < 2.2f)
-        {
-            onTargetChance -= 0.12f;
-        }
-        else if (pressureDistanceMeters < 5f)
-        {
-            onTargetChance -= 0.05f;
-        }
-        float maximumOnTargetChance = Mathf.Lerp(0.94f, 0.82f, goalkeeperCoverage);
-        if (accuracyRoll > Mathf.Clamp(onTargetChance, 0.12f, maximumOnTargetChance))
+        if (!IsOnTarget(finishing, distanceMeters, angleFactor, pressureDistanceMeters,
+                goalkeeperCoverage, accuracyRoll))
         {
             return ShotOutcome.OffTarget;
         }
@@ -86,5 +73,31 @@ public sealed class ShotOutcomeResolver
         return cornerRoll < _parriedShotCornerProbability
             ? ShotOutcome.ParriedCorner
             : ShotOutcome.Parried;
+    }
+
+    public bool IsOnTarget(
+        int finishing,
+        float distanceMeters,
+        float angleFactor,
+        float pressureDistanceMeters,
+        float goalkeeperCoverage,
+        float accuracyRoll)
+    {
+        goalkeeperCoverage = Mathf.Clamp(goalkeeperCoverage, 0f, 1f);
+        float distanceFactor = Mathf.Clamp((distanceMeters - 8f) / 26f, 0f, 1f);
+        float onTargetChance = Mathf.Lerp(0.74f, 0.20f, distanceFactor) +
+                               (finishing - 65) / 180f -
+                               angleFactor * 0.22f +
+                               (1f - goalkeeperCoverage) * 0.16f;
+        if (pressureDistanceMeters < 2.2f)
+        {
+            onTargetChance -= 0.12f;
+        }
+        else if (pressureDistanceMeters < 5f)
+        {
+            onTargetChance -= 0.05f;
+        }
+        float maximumOnTargetChance = Mathf.Lerp(0.94f, 0.82f, goalkeeperCoverage);
+        return accuracyRoll <= Mathf.Clamp(onTargetChance, 0.12f, maximumOnTargetChance);
     }
 }

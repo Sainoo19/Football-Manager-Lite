@@ -3,6 +3,8 @@ using System.Collections.Generic;
 
 public sealed class PassCandidateGenerator : IFootballActionCandidateGenerator
 {
+    private const float ChanceCreationDistanceMeters = 30f;
+    private const float ChanceCreationWeight = 0.45f;
     public void Generate(FootballActionContext context, ICollection<FootballActionCandidate> candidates)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -33,6 +35,10 @@ public sealed class PassCandidateGenerator : IFootballActionCandidateGenerator
                 (option.ActionType == FootballActionType.ThroughBall ? 0.22f : 0f),
                 0f,
                 1f);
+            float receiverGoalDistance = FootballPitchDimensions.DistanceMeters(option.TargetPoint, context.AttackingGoal);
+            float goalProximity = Math.Clamp((ChanceCreationDistanceMeters - receiverGoalDistance) / 22f, 0f, 1f);
+            float usableSpace = Math.Clamp(pass.ReceiverSpaceMeters / 6f, 0f, 1f);
+            threat = Math.Clamp(threat + goalProximity * usableSpace * (1f - pass.LaneRisk) * ChanceCreationWeight, 0f, 1f);
             candidates.Add(new FootballActionCandidate(
                 option.ActionType,
                 context.ActorId,

@@ -33,12 +33,18 @@ public sealed partial class LiveMatchEngine
         float actionRoll = DecisionRoll(
             _actionSourceId,
             intendedReceiverId,
-            _decisionSerial + AerialDuels * 41 + 811);
+            _decisionSerial + AerialArrivals * 41 + 811);
         AerialDuelResolution resolution = _aerialDuelResolver.Resolve(
             candidates,
             nearbyOpponentCount,
-            actionRoll);
-        AerialDuels++;
+            actionRoll,
+            allowControlledReception: true);
+        AerialArrivals++;
+        bool isContested = AerialDuelResolver.IsContested(candidates);
+        if (isContested)
+        {
+            AerialDuels++;
+        }
         _aerialContenderIds.Clear();
 
         if (resolution.HasWinner && resolution.WinnerId == _pendingOffsideReceiverId)
@@ -50,6 +56,35 @@ public sealed partial class LiveMatchEngine
 
         switch (resolution.Outcome)
         {
+            case AerialDuelOutcome.ControlledReception:
+                FootballPlayer? receiver = GetPlayer(resolution.WinnerId);
+                float pressure = SpaceEvaluator.NearestOpponentDistanceMeters(BallPosition,
+                    _playerTeams[resolution.WinnerId], CurrentPositions, _playerTeams);
+                FirstTouchResolution touch = _firstTouchResolver.Resolve(
+                    receiver?.FirstTouch ?? 50, receiver?.Technique ?? 50,
+                    receiver?.Composure ?? 50, receiver?.form ?? 50, pressure,
+                    FootballPitchDimensions.DistanceMeters(_ballActionFrom, _ballActionTo) /
+                        Mathf.Max(_ballActionDuration, 0.01f), LivePassType.Lofted,
+                    DecisionRoll(resolution.WinnerId, _actionSourceId, _decisionSerial + 547),
+                    DecisionRoll(resolution.WinnerId, _actionSourceId, _decisionSerial + 563));
+                if (touch.Outcome != FirstTouchOutcome.Controlled)
+                {
+                    AerialSecondBalls++;
+                    ResolveFirstTouchError(resolution.WinnerId, touch);
+                    return;
+                }
+                AerialControlledReceptions++;
+                if (resolution.WinnerId == intendedReceiverId)
+                {
+                    CompletedPasses++;
+                    Simulation.RegisterLivePassCompletion(_playerTeams[resolution.WinnerId]);
+                    _state.PossessionSequence.RecordCompletedPass(
+                        _actionSourceTeamId, _actionSourceId, resolution.WinnerId);
+                    UpdatePossessionDiagnostics();
+                }
+                GivePossessionTo(resolution.WinnerId, 0.55f);
+                SetAction($"{PlayerName(resolution.WinnerId)} đón và khống chế bóng bổng");
+                return;
             case AerialDuelOutcome.GoalkeeperCatch:
                 GoalkeeperAerialCatches++;
                 GivePossessionTo(resolution.WinnerId, 0.75f);
@@ -60,17 +95,20 @@ public sealed partial class LiveMatchEngine
                 StartAerialClearance(resolution.WinnerId, true);
                 return;
             case AerialDuelOutcome.DefensiveHeaderClearance:
-                HeadersWon++;
+                AerialHeaderTouches++;
+                HeadersWon += isContested ? 1 : 0;
                 DefensiveHeaders++;
                 StartAerialClearance(resolution.WinnerId, false);
                 return;
             case AerialDuelOutcome.HeaderShot:
-                HeadersWon++;
+                AerialHeaderTouches++;
+                HeadersWon += isContested ? 1 : 0;
                 HeaderShots++;
                 StartHeaderShot(resolution.WinnerId);
                 return;
             case AerialDuelOutcome.HeaderPass:
-                HeadersWon++;
+                AerialHeaderTouches++;
+                HeadersWon += isContested ? 1 : 0;
                 StartHeaderPass(resolution.WinnerId);
                 return;
             default:
@@ -116,7 +154,7 @@ public sealed partial class LiveMatchEngine
                 arrival.ArrivalMarginSeconds,
                 FootballPitchDimensions.DistanceMeters(BallPosition, attackingGoal),
                 HasNearbyHeaderOption(playerId),
-                DecisionRoll(playerId, _actionSourceId, _decisionSerial + AerialDuels * 53 + 827)));
+                DecisionRoll(playerId, _actionSourceId, _decisionSerial + AerialArrivals * 53 + 827)));
         }
         return candidates;
     }
@@ -266,6 +304,7 @@ public sealed partial class LiveMatchEngine
 
     private void SetAerialActionOwner(StringName playerId)
     {
+        _lastBallTouch.Record(playerId, _playerTeams[playerId]);
         _state.BallOwnerId = playerId;
         SetTrackedPossession(_playerTeams[playerId]);
         BallPosition = CurrentPositions[playerId];

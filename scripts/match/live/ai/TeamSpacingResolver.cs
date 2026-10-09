@@ -164,5 +164,7 @@ public static class TeamSpacingResolver
         PlayerIntentKind.CarryBall or
         PlayerIntentKind.ReceivePass or
         PlayerIntentKind.PressBall or
+        PlayerIntentKind.MarkOpponent or
+        PlayerIntentKind.CoverPress or
         PlayerIntentKind.ChaseLooseBall;
 }

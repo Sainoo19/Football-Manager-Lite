@@ -84,7 +84,7 @@ public static class GroundDuelTests
         DefenderEngagementPlanner planner = new();
         DribbleTouchType exposedTouch = DribbleTouchType.KnockOn;
         DefenderEngagementPlan firstExchange = planner.Plan(CreateDefenderContext(
-            exposedTouch,
+            DribbleTouchType.CloseControl,
             exchangeCount: 0,
             distanceMeters: 1.4f,
             cooldown: false,

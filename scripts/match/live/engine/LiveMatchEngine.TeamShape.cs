@@ -26,7 +26,13 @@ public sealed partial class LiveMatchEngine
             ApplyPenaltyRestartTargets();
             return;
         }
+        if (_state.IsRestartPending && _state.RestartType.ToString() is "corner" or "throw_in")
+        {
+            ApplyTouchlineRestartTargets();
+            return;
+        }
 
+        RefreshShotGoalkeeperReaction();
         PlanPlayerIntents(false);
         foreach ((StringName playerId, PlayerIntent intent) in _playerIntents)
         {
@@ -37,6 +43,7 @@ public sealed partial class LiveMatchEngine
                 _ => intent.Target
             };
         }
+        ApplyShotGoalkeeperResponse();
         ApplyGroundDuelTargets();
         ApplyAerialContestTargets();
     }

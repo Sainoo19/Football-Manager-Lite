@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.IO;
+using System.Text.Json;
 using Godot;
 using Godot.Collections;
 
@@ -31,6 +33,7 @@ public partial class LiveMatchBalanceBatchRunner : Node
                 "speed-audits",
                 configuration.SpeedParityAuditCount);
             long firstSeed = ParseLong(arguments, "seed", 202607180000L);
+            bool flowDiagnosticsEnabled = arguments.GetValueOrDefault("flow-diagnostics", "false") == "true";
             string outputDirectory = arguments.GetValueOrDefault(
                 "output",
                 ProjectSettings.GlobalizePath(
@@ -44,6 +47,7 @@ public partial class LiveMatchBalanceBatchRunner : Node
             LiveMatchBalanceAnalyzer analyzer = new();
             HeadlessLiveMatchRunner runner = new();
             List<LiveMatchBalanceRecord> records = new(matchCount);
+            List<object> flowRecords = new(matchCount);
             GD.Print($"BALANCE_BATCH_START matches={matchCount} seed={firstSeed}");
             for (int index = 0; index < matchCount; index++)
             {
@@ -51,9 +55,23 @@ public partial class LiveMatchBalanceBatchRunner : Node
                 (FootballTeam home, FootballTeam away) = SelectTeams(teams, index);
                 try
                 {
+                    MatchFlowDiagnostics flow = new();
                     HeadlessLiveMatchResult result = runner.RunToFullTime(
                         new FootballMatchSimulation().setup(home, away, seed),
-                        MatchPlaybackSpeed.Fastest);
+                        MatchPlaybackSpeed.Fastest,
+                        realStepSeconds: flowDiagnosticsEnabled ? 0.0005d : 0.05d,
+                        observe: flowDiagnosticsEnabled ? engine => flow.Observe(engine) : null);
+                    // Records are copied only at the end, outside the simulation loop.
+                    if (flowDiagnosticsEnabled)
+                    {
+                        flowRecords.Add(new { seed, flow, shots = result.Shots, aerial = result.Aerial });
+                        if (flow.MaximumStationaryLooseBallSeconds > 30d || flow.MaximumRestartWaitSeconds > 60d ||
+                            flow.MaximumOwnerHoldSeconds > 30f)
+                        {
+                            journal.AddCodeBug(BalanceIssueSeverity.Error, "STALLED_MATCH_FLOW",
+                                $"Bóng dừng={flow.MaximumStationaryLooseBallSeconds:0.0}s; restart={flow.MaximumRestartWaitSeconds:0.0}s; giữ bóng={flow.MaximumOwnerHoldSeconds:0.0}s.", seed);
+                        }
+                    }
                     LiveMatchBalanceRecord record = analyzer.CreateRecord(index + 1, result);
                     analyzer.ValidateMatch(result, record, journal);
                     records.Add(record);
@@ -67,7 +85,7 @@ public partial class LiveMatchBalanceBatchRunner : Node
                         seed);
                 }
 
-                if ((index + 1) % 25 == 0 || index + 1 == matchCount)
+                if ((index + 1) % 5 == 0 || index + 1 == matchCount)
                 {
                     GD.Print($"BALANCE_BATCH_PROGRESS completed={index + 1}/{matchCount}");
                 }
@@ -81,6 +99,11 @@ public partial class LiveMatchBalanceBatchRunner : Node
                 configuration,
                 journal);
             new BalanceReportWriter().Write(outputDirectory, configuration, summary, records, journal);
+            if (flowDiagnosticsEnabled)
+            {
+                File.WriteAllText(Path.Combine(outputDirectory, "flow-diagnostics.json"),
+                    JsonSerializer.Serialize(flowRecords, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true }));
+            }
             stopwatch.Stop();
             GD.Print(
                 $"BALANCE_BATCH_COMPLETE completed={records.Count}/{matchCount} " +

@@ -1,144 +1,230 @@
-using System.Linq;
 using Godot;
 
 public sealed partial class LiveMatchEngine
 {
+    private readonly ShotContactResolver _shotContactResolver = new();
+    private int _pendingShotFinishing;
+    private float _pendingShotPressureMeters;
+    private float _pendingShotAngle;
+    private int _pendingShotDecisionSerial;
+    private Vector2 _pendingShotReboundVelocity;
+    private readonly LiveShotDiagnostics _shotDiagnostics = new();
+    private Vector2 _pendingShotKeeperStart;
+    private float _pendingShotKeeperReactionEnds;
+    private bool _pendingShotKeeperAttemptedContact;
+    private float _pendingShotKeeperContactDistance;
+    private bool _pendingShotKeeperHasReacted;
+    private System.Collections.Generic.IReadOnlyList<LiveShotPlayer>? _pendingShotPlayers;
 
-    private void StartLiveShot(
-        StringName shooterId,
-        float pressureDistanceMeters,
-        bool isHeader = false)
+    public System.Collections.Generic.IReadOnlyList<LiveShotRecord> ShotRecords => _shotDiagnostics.Records;
+
+    private void StartLiveShot(StringName shooterId, float pressureDistanceMeters, bool isHeader = false)
     {
         if (Simulation is null)
         {
             return;
         }
-
-        ResetCarrySequence();
-        StringName shootingTeamId = _playerTeams[shooterId];
-        _teamPhaseCoordinator.RecordShot(shootingTeamId);
-        StringName defendingTeamId = shootingTeamId == Simulation.home.team.id
-            ? Simulation.away.team.id
-            : Simulation.home.team.id;
-        StringName goalkeeperId = ChooseGoalkeeper(defendingTeamId);
-        Vector2 shooterPosition = CurrentPositions[shooterId];
-        float attackDirection = AttackDirection(shootingTeamId);
-        float goalX = AttackingGoalX(shootingTeamId);
-        _pendingShotDistanceMeters = FootballPitchDimensions.DistanceMeters(
-            shooterPosition,
-            new Vector2(goalX, 0.5f));
-        _pendingShotSituation = isHeader ? "header" : "open_play";
-        Vector2 goalkeeperPosition = CurrentPositions.TryGetValue(goalkeeperId, out Vector2 currentGoalkeeperPosition)
-            ? currentGoalkeeperPosition
-            : new Vector2(goalX, 0.5f);
-        Vector2 goalTarget = _shotTargetPlanner.ChooseGoalTarget(
-            goalX,
-            goalkeeperPosition,
-            DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 101));
-        float targetY = goalTarget.Y;
         FootballPlayer? shooter = GetPlayer(shooterId);
-        FootballPlayer? goalkeeper = GetPlayer(goalkeeperId);
-
-        StringName blockerId = CurrentPositions.Keys
-            .Where(id => _playerTeams[id] == defendingTeamId && _playerRoles[id] != "GK")
-            .OrderBy(id => DistanceToSegment(
-                FootballPitchDimensions.ToMeters(CurrentPositions[id]),
-                FootballPitchDimensions.ToMeters(shooterPosition),
-                FootballPitchDimensions.ToMeters(goalTarget)))
-            .FirstOrDefault() ?? new StringName();
-        float blockerDistanceMeters = blockerId != new StringName()
-            ? DistanceToSegment(
-                FootballPitchDimensions.ToMeters(CurrentPositions[blockerId]),
-                FootballPitchDimensions.ToMeters(shooterPosition),
-                FootballPitchDimensions.ToMeters(goalTarget))
-            : float.PositiveInfinity;
-        float blockChance = blockerId == new StringName()
-            ? 0f
-            : Mathf.Clamp(
-                0.06f + (2.2f - blockerDistanceMeters) * 0.16f +
-                ((GetPlayer(blockerId)?.positioning ?? 50) - 65) / 220f,
-                0f,
-                0.48f);
-
-        string outcome;
-        Vector2 destination;
-        StringName nextOwner = new();
-        if (DecisionRoll(shooterId, blockerId, _decisionSerial + 131) < blockChance)
-        {
-            bool deflectsForCorner = DecisionRoll(shooterId, blockerId, _decisionSerial + 139) <
-                                     _configuration.BlockedShotCornerProbability;
-            outcome = deflectsForCorner ? "blocked_corner" : "blocked";
-            destination = deflectsForCorner
-                ? new Vector2(goalX, CurrentPositions[blockerId].Y < 0.5f ? 0.03f : 0.97f)
-                : CurrentPositions[blockerId] + new Vector2(attackDirection * 0.025f, 0.015f);
-        }
-        else
-        {
-            float distanceMeters = FootballPitchDimensions.DistanceMeters(shooterPosition, goalTarget);
-            float angleFactor = Mathf.Clamp(Mathf.Abs(shooterPosition.Y - 0.5f) * 2f, 0f, 1f);
-            float goalkeeperCoverage = _shotTargetPlanner.GoalkeeperCoverage(
-                shooterPosition,
-                goalTarget,
-                goalkeeperPosition);
-            float accuracyRoll = DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 151);
-            int finishingRating = isHeader
-                ? Mathf.RoundToInt((shooter?.Heading ?? 50) * 0.68f +
-                                   (shooter?.finishing ?? 50) * 0.32f)
-                : shooter?.finishing ?? 50;
-            ShotOutcome resolution = _shotOutcomeResolver.Resolve(
-                finishingRating,
-                shooter?.positioning ?? 50,
-                shooter?.form ?? 50,
-                goalkeeper?.goalkeeping ?? 55,
-                goalkeeper?.form ?? 50,
-                distanceMeters,
-                angleFactor,
-                pressureDistanceMeters,
-                goalkeeperCoverage,
-                accuracyRoll,
-                DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 181),
-                DecisionRoll(goalkeeperId, shooterId, _decisionSerial + 197),
-                DecisionRoll(goalkeeperId, shooterId, _decisionSerial + 211));
-            outcome = resolution switch
-            {
-                ShotOutcome.Goal => "goal",
-                ShotOutcome.Saved => "saved",
-                ShotOutcome.Parried => "parried",
-                ShotOutcome.ParriedCorner => "parried_corner",
-                _ => "off_target"
-            };
-            destination = resolution switch
-            {
-                ShotOutcome.Goal => goalTarget,
-                ShotOutcome.Saved => new Vector2(goalX - attackDirection * (1.5f / FootballPitchDimensions.LengthMeters), targetY),
-                ShotOutcome.ParriedCorner => new Vector2(goalX, targetY < 0.5f ? 0.03f : 0.97f),
-                ShotOutcome.Parried => new Vector2(
-                    attackDirection < 0f ? 0.13f : 0.87f,
-                    Mathf.Clamp(targetY + (targetY < 0.5f ? 0.12f : -0.12f), 0.18f, 0.82f)),
-                _ => _shotTargetPlanner.ChooseOffTargetDestination(
-                    goalX,
-                    targetY,
-                    shooter?.finishing ?? 50,
-                    distanceMeters,
-                    accuracyRoll)
-            };
-            nextOwner = resolution == ShotOutcome.Saved ? goalkeeperId : new StringName();
-        }
-
-        float shotDistanceMeters = FootballPitchDimensions.DistanceMeters(shooterPosition, destination);
-        _pendingShotOutcome = outcome;
-        _decisionsSinceShot = 0;
-        _pendingShotShooterId = shooterId;
-        _pendingShotGoalkeeperId = goalkeeperId;
-        _pendingShotBlockerId = blockerId;
-        StartBallAction(
-            destination,
-            Mathf.Clamp(shotDistanceMeters / 28f, 0.36f, 1.05f),
-            0.012f,
-            nextOwner,
-            BallActionKind.Shot);
+        StringName goalkeeperId = ChooseGoalkeeper(OpposingTeam(_playerTeams[shooterId]));
+        Vector2 position = CurrentPositions[shooterId];
+        Vector2 goalTarget = _shotTargetPlanner.ChooseGoalTarget(
+            AttackingGoalX(_playerTeams[shooterId]),
+            CurrentPositions[goalkeeperId],
+            DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 101));
+        int finishing = isHeader
+            ? Mathf.RoundToInt((shooter?.Heading ?? 50) * 0.68f + (shooter?.finishing ?? 50) * 0.32f)
+            : shooter?.finishing ?? 50;
+        float distance = FootballPitchDimensions.DistanceMeters(position, goalTarget);
+        float angle = Mathf.Clamp(Mathf.Abs(position.Y - 0.5f) * 2f, 0f, 1f);
+        float coverage = _shotTargetPlanner.GoalkeeperCoverage(position, goalTarget, CurrentPositions[goalkeeperId]);
+        float accuracyRoll = DecisionRoll(shooterId, goalkeeperId, _decisionSerial + 151);
+        bool onTarget = _shotOutcomeResolver.IsOnTarget(
+            finishing, distance, angle, pressureDistanceMeters, coverage, accuracyRoll);
+        Vector2 destination = onTarget
+            ? goalTarget
+            : _shotTargetPlanner.ChooseOffTargetDestination(
+                goalTarget.X, goalTarget.Y, finishing, distance, accuracyRoll);
+        BeginShotFlight(shooterId, goalkeeperId, destination, onTarget, finishing,
+            pressureDistanceMeters, angle, isHeader ? "header" : "open_play");
         SetAction(isHeader
             ? $"{PlayerName(shooterId)} bật cao đánh đầu dứt điểm"
             : $"{PlayerName(shooterId)} tung cú sút");
+    }
+
+    private void BeginShotFlight(
+        StringName shooterId,
+        StringName goalkeeperId,
+        Vector2 destination,
+        bool onTarget,
+        int finishing,
+        float pressureDistanceMeters,
+        float angle,
+        StringName situation)
+    {
+        ResetCarrySequence();
+        _teamPhaseCoordinator.RecordShot(_playerTeams[shooterId]);
+        _pendingShotDistanceMeters = FootballPitchDimensions.DistanceMeters(
+            BallPosition, new Vector2(AttackingGoalX(_playerTeams[shooterId]), 0.5f));
+        _pendingShotSituation = situation;
+        _pendingShotShooterId = shooterId;
+        _pendingShotGoalkeeperId = goalkeeperId;
+        _pendingShotBlockerId = new StringName();
+        _pendingShotFinishing = finishing;
+        _pendingShotPressureMeters = pressureDistanceMeters;
+        _pendingShotAngle = angle;
+        _pendingShotDecisionSerial = _decisionSerial;
+        _pendingShotKeeperStart = CurrentPositions[goalkeeperId];
+        System.Collections.Generic.List<LiveShotPlayer> players = new(CurrentPositions.Count);
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
+        {
+            _playerIntents.TryGetValue(playerId, out PlayerIntent? intent);
+            players.Add(new LiveShotPlayer(playerId.ToString(), _playerTeams[playerId].ToString(),
+                _playerRoles[playerId], CurrentPositions[playerId], TargetPositions[playerId],
+                intent?.Assignment.ToString() ?? "", intent?.RelatedPlayerId.ToString() ?? ""));
+        }
+        _pendingShotPlayers = players.AsReadOnly();
+        _pendingShotKeeperReactionEnds = _state.VisualTime + GoalkeeperResponseRules.ReactionDelaySeconds(
+            GetPlayer(goalkeeperId)?.goalkeeping ?? 55);
+        _pendingShotKeeperAttemptedContact = false;
+        _pendingShotKeeperHasReacted = false;
+        _pendingShotKeeperContactDistance = 0f;
+        _nextIntentPlanTime = 0f;
+        _pendingShotReboundVelocity = Vector2.Zero;
+        // An accurate shot scores only if it reaches the goal without a successful physical contact.
+        _pendingShotOutcome = onTarget ? "goal" : "off_target";
+        _decisionsSinceShot = 0;
+        float distance = FootballPitchDimensions.DistanceMeters(BallPosition, destination);
+        StartBallAction(destination, Mathf.Clamp(distance / 28f, 0.20f, 1.6f),
+            0.012f, new StringName(), BallActionKind.Shot);
+    }
+
+    private bool TryResolveShotContact(Vector2 previousBallPosition)
+    {
+        // A failed challenge must not hide another contact later in the same swept segment.
+        for (int attempt = 0; attempt < CurrentPositions.Count; attempt++)
+        {
+            StringName candidateId = new();
+            Vector2 contactPosition = BallPosition;
+            float earliestProgress = float.PositiveInfinity;
+            foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
+            {
+                if (_playerTeams[playerId] == _actionSourceTeamId || _interceptionAttemptedBy.Contains(playerId))
+                {
+                    continue;
+                }
+                bool isGoalkeeper = playerId == _pendingShotGoalkeeperId;
+                if (isGoalkeeper && _pendingShotOutcome == "off_target" ||
+                    _ballVisualHeight > (isGoalkeeper ? 2.6f : 1.5f))
+                {
+                    continue;
+                }
+                float reach = isGoalkeeper
+                    ? _state.VisualTime >= _pendingShotKeeperReactionEnds
+                        ? ShotContactResolver.GoalkeeperReachMeters
+                        : ShotContactResolver.OutfieldReachMeters
+                    : ShotContactResolver.OutfieldReachMeters;
+                if (_shotContactResolver.TryContact(previousBallPosition, BallPosition,
+                        CurrentPositions[playerId], reach, out Vector2 contact, out float progress) &&
+                    progress < earliestProgress)
+                {
+                    candidateId = playerId;
+                    contactPosition = contact;
+                    earliestProgress = progress;
+                }
+            }
+            if (candidateId == new StringName())
+            {
+                return false;
+            }
+            _interceptionAttemptedBy.Add(candidateId);
+            bool goalkeeperContact = candidateId == _pendingShotGoalkeeperId;
+            if (goalkeeperContact)
+            {
+                _pendingShotKeeperAttemptedContact = true;
+                _pendingShotKeeperContactDistance = FootballPitchDimensions.DistanceMeters(
+                    contactPosition, CurrentPositions[candidateId]);
+                ShotOutcome outcome = ResolveGoalkeeperShotContact(candidateId);
+                if (outcome == ShotOutcome.Goal)
+                {
+                    continue;
+                }
+                bool holds = outcome == ShotOutcome.Saved && GoalkeeperResponseRules.CanHoldContact(
+                    _shotContactResolver.LaneDistanceMeters(_ballActionFrom, _ballActionTo, CurrentPositions[candidateId]),
+                    ShotVelocity().Length(), GetPlayer(candidateId)?.goalkeeping ?? 55);
+                _pendingShotOutcome = holds ? "saved" : "parried";
+            }
+            else
+            {
+                FootballPlayer? blocker = GetPlayer(candidateId);
+                float blockChance = Mathf.Clamp(0.48f + (blocker?.positioning ?? 50) / 250f, 0.48f, 0.88f);
+                if (DecisionRoll(_pendingShotShooterId, candidateId, _pendingShotDecisionSerial + 131) >= blockChance)
+                {
+                    continue;
+                }
+                _pendingShotBlockerId = candidateId;
+                _pendingShotOutcome = "blocked";
+            }
+            BallPosition = contactPosition;
+            _lastBallTouch.Record(candidateId, _playerTeams[candidateId]);
+            _pendingShotReboundVelocity = _pendingShotOutcome == "saved"
+                ? Vector2.Zero
+                : _shotContactResolver.ReboundVelocity(
+                    ShotVelocity(), contactPosition, CurrentPositions[candidateId], goalkeeperContact);
+            _ballActionActive = false;
+            _ballActionKind = BallActionKind.None;
+            _ballVisualHeight = 0f;
+            CompleteLiveShot();
+            return true;
+        }
+        return false;
+    }
+
+    private Vector2 ShotVelocity() =>
+        (FootballPitchDimensions.ToMeters(_ballActionTo) - FootballPitchDimensions.ToMeters(_ballActionFrom)) /
+        Mathf.Max(_ballActionDuration, 0.01f);
+
+    private void ApplyShotGoalkeeperResponse()
+    {
+        if (!_ballActionActive || _ballActionKind != BallActionKind.Shot ||
+            _state.VisualTime >= _pendingShotKeeperReactionEnds)
+        {
+            return;
+        }
+        TargetPositions[_pendingShotGoalkeeperId] = _pendingShotKeeperStart;
+        _playerIntents[_pendingShotGoalkeeperId] = new PlayerIntent(
+            PlayerIntentKind.Goalkeep, _pendingShotKeeperStart,
+            _teamPhaseCoordinator.PhaseFor(_playerTeams[_pendingShotGoalkeeperId]));
+    }
+
+    private void RefreshShotGoalkeeperReaction()
+    {
+        if (_ballActionActive && _ballActionKind == BallActionKind.Shot &&
+            !_pendingShotKeeperHasReacted && _state.VisualTime >= _pendingShotKeeperReactionEnds)
+        {
+            _pendingShotKeeperHasReacted = true;
+            _nextIntentPlanTime = 0f;
+        }
+    }
+
+    private ShotOutcome ResolveGoalkeeperShotContact(StringName goalkeeperId)
+    {
+        FootballPlayer? shooter = GetPlayer(_pendingShotShooterId);
+        FootballPlayer? goalkeeper = GetPlayer(goalkeeperId);
+        if (_pendingShotSituation == "penalty")
+        {
+            PenaltyKickOutcome penalty = _penaltyKickResolver.Resolve(
+                _pendingShotFinishing, shooter?.Composure ?? 50, shooter?.form ?? 50,
+                goalkeeper?.goalkeeping ?? 55, goalkeeper?.form ?? 50, 0f,
+                DecisionRoll(_pendingShotShooterId, goalkeeperId, _pendingShotDecisionSerial + 719));
+            return penalty == PenaltyKickOutcome.Goal ? ShotOutcome.Goal : ShotOutcome.Saved;
+        }
+        return _shotOutcomeResolver.Resolve(
+            _pendingShotFinishing, shooter?.positioning ?? 50, shooter?.form ?? 50,
+            goalkeeper?.goalkeeping ?? 55, goalkeeper?.form ?? 50,
+            _pendingShotDistanceMeters, _pendingShotAngle, _pendingShotPressureMeters,
+            1f, 0f,
+            DecisionRoll(_pendingShotShooterId, goalkeeperId, _pendingShotDecisionSerial + 181),
+            DecisionRoll(goalkeeperId, _pendingShotShooterId, _pendingShotDecisionSerial + 197),
+            DecisionRoll(goalkeeperId, _pendingShotShooterId, _pendingShotDecisionSerial + 211));
     }
 }

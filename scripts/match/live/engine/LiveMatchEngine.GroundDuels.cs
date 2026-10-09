@@ -38,17 +38,8 @@ public sealed partial class LiveMatchEngine
         }
         if (sequence.ExchangeCount >= _configuration.MaximumUnresolvedGroundDuelExchanges)
         {
-            if (TryFinishDangerousGroundDuel(carrierId, distanceMeters))
-            {
-                return true;
-            }
             sequence.Reset();
-            StringName outletId = ChoosePassTarget(true);
-            if (outletId != new StringName())
-            {
-                StartPass(outletId, BallActionKind.Pass);
-                return true;
-            }
+            // Action selection owns the shot/pass decision, including after a prolonged duel.
             return false;
         }
 
@@ -90,7 +81,8 @@ public sealed partial class LiveMatchEngine
                 defenderIsGoalkeeper));
         sequence.RecordEngagement(engagement);
         GroundDuelExchanges++;
-        int requiredTouchesBeforeChallenge = defenderIsGoalkeeper ? 1 : 2;
+        int requiredTouchesBeforeChallenge = defenderIsGoalkeeper ||
+            sequence.CurrentTouch.Type == DribbleTouchType.KnockOn ? 1 : 2;
         if (engagement.AttemptsChallenge && sequence.TouchCount >= requiredTouchesBeforeChallenge)
         {
             ResolveGroundDuelChallenge(carrierId, nearestDefenderId, distanceMeters, engagement);
@@ -265,27 +257,6 @@ public sealed partial class LiveMatchEngine
         }
     }
 
-    private bool TryFinishDangerousGroundDuel(StringName carrierId, float pressureDistanceMeters)
-    {
-        if (Simulation?.use_live_pitch_events != true ||
-            _playerRoles[carrierId] is not ("ST" or "LW" or "RW" or "AM"))
-        {
-            return false;
-        }
-
-        Vector2 attackingGoal = new(AttackingGoalX(_playerTeams[carrierId]), 0.5f);
-        float distanceToGoalMeters = FootballPitchDimensions.DistanceMeters(
-            CurrentPositions[carrierId],
-            attackingGoal);
-        if (distanceToGoalMeters > 13.5f)
-        {
-            return false;
-        }
-
-        StartLiveShot(carrierId, pressureDistanceMeters);
-        return true;
-    }
-
     private void CompleteDefenderWin(
         StringName carrierId,
         StringName defenderId,
@@ -295,6 +266,7 @@ public sealed partial class LiveMatchEngine
         _carryOwnerId = new StringName();
         _consecutiveCarries = 0;
         _state.BallOwnerId = defenderId;
+        _lastBallTouch.Record(defenderId, _playerTeams[defenderId]);
         SetTrackedPossession(_playerTeams[defenderId]);
         _state.PossessionSequence.ObserveOwner(
             _playerTeams[defenderId],
@@ -327,6 +299,7 @@ public sealed partial class LiveMatchEngine
             : new Vector2(AttackDirection(_playerTeams[carrierId]), 0f);
         GroundDuelLooseBalls++;
         ResetCarrySequence();
+        _lastBallTouch.Record(defenderId, _playerTeams[defenderId]);
         StartLooseBall(
             $"{PlayerName(defenderId)} va chạm mạnh — bóng bật khỏi chân {PlayerName(carrierId)}",
             direction * looseBallSpeedMetersPerSecond);
@@ -334,6 +307,7 @@ public sealed partial class LiveMatchEngine
 
     private void ResolveStalledPossessionContest(StringName carrierId, StringName defenderId)
     {
+        _lastBallTouch.Record(carrierId, _playerTeams[carrierId]);
         Vector2 direction = new(AttackDirection(_playerTeams[carrierId]), 0f);
         if (defenderId != new StringName() && CurrentPositions.ContainsKey(defenderId))
         {
@@ -380,7 +354,8 @@ public sealed partial class LiveMatchEngine
         _playerIntents[sequence.CarrierId] = carrierPlayerIntent;
         TargetPositions[sequence.CarrierId] = sequence.CurrentTouch.Target;
 
-        if (!sequence.HasDefender || !CurrentPositions.ContainsKey(sequence.DefenderId))
+        if (!sequence.HasDefender || !sequence.HasEngagement ||
+            !CurrentPositions.ContainsKey(sequence.DefenderId))
         {
             return;
         }
@@ -436,7 +411,7 @@ public sealed partial class LiveMatchEngine
         }
         Vector2 direction = separation.LengthSquared() > 0.001f ? separation.Normalized() : Vector2.Down;
         Vector2 correctedDefenderMeters = carrierMeters + direction * DuelDistanceRules.MinimumPlayerSeparationMeters;
-        CurrentPositions[defenderId] = SpaceEvaluator.ClampToPitch(
+        CurrentPositions[defenderId] = PlayerPitchBoundary.Clamp(
             FootballPitchDimensions.ToNormalized(correctedDefenderMeters));
         MinimumObservedGroundDuelSeparationMeters = Mathf.Min(
             MinimumObservedGroundDuelSeparationMeters,

@@ -75,6 +75,7 @@ public sealed partial class LiveMatchEngine
         }
 
         _state.BallOwnerId = ballCarrierId;
+        _lastBallTouch.Record(ballCarrierId, attackingTeamId);
         BallPosition = definition.BallCarrierPosition;
         if (definition.StartsAfterTurnover)
         {
@@ -136,6 +137,7 @@ public sealed partial class LiveMatchEngine
         _ballNextOwnerId = new StringName();
         _pendingOffsideReceiverId = new StringName();
         _pendingShotOutcome = new StringName();
+        _lastBallTouch.Reset();
         _state.IsLooseBallActive = false;
         _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
         _state.IsRestartPending = false;

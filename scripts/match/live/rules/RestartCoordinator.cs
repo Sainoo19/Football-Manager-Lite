@@ -9,6 +9,8 @@ public sealed class RestartCoordinator
             "goal_kick" => GoalKickRestartPlanner.PreparationDurationSeconds,
             "free_kick" => freeKickPlan.PreparationDurationSeconds,
             "penalty" => PenaltyRestartPlanner.PreparationDurationSeconds,
+            "corner" => 3f,
+            "throw_in" => 2f,
             _ => 0.46f
         };
     }

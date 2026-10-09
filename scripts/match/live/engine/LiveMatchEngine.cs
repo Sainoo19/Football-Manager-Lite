@@ -23,7 +23,8 @@ public sealed partial class LiveMatchEngine
         Shot,
         Clearance,
         HeaderPass,
-        HeaderClearance
+        HeaderClearance,
+        ThrowIn
     }
 
     private readonly LiveMatchState _state = new();
@@ -75,6 +76,8 @@ public sealed partial class LiveMatchEngine
     private readonly AerialDuelResolver _aerialDuelResolver;
     private readonly LiveMatchEngineConfiguration _configuration;
     private readonly RestartCoordinator _restartCoordinator = new();
+    private readonly TouchlineRestartPlanner _touchlineRestartPlanner = new();
+    private readonly BallTouchLedger _lastBallTouch = new();
     private readonly IntentDictionary _playerIntents = new();
     private readonly HashSet<StringName> _interceptionAttemptedBy = new();
     private LiveMatchRuntime _runtime = new();
@@ -149,6 +152,9 @@ public sealed partial class LiveMatchEngine
     public int CarrierEscapes { get; private set; }
     public int TacklesWon { get; private set; }
     public int AerialDuels { get; private set; }
+    public int AerialArrivals { get; private set; }
+    public int AerialControlledReceptions { get; private set; }
+    public int AerialHeaderTouches { get; private set; }
     public int HeadersWon { get; private set; }
     public int DefensiveHeaders { get; private set; }
     public int HeaderShots { get; private set; }
@@ -177,6 +183,8 @@ public sealed partial class LiveMatchEngine
     public string ConfigurationFingerprint { get; }
     public int PendingCardActionCount => _state.PendingCardActions.Count;
     public StringName CurrentBallOwnerId => _state.BallOwnerId;
+    public StringName LastBallTouchPlayerId => _lastBallTouch.PlayerId;
+    public StringName LastBallTouchTeamId => _lastBallTouch.TeamId;
     public IReadOnlyDictionary<StringName, PlayerIntent> CurrentIntents => _playerIntents;
     public bool IsPlaying
     {
@@ -297,6 +305,12 @@ public sealed partial class LiveMatchEngine
         Vector2 clampedPosition = ClampToPitch(position);
         CurrentPositions[playerId] = clampedPosition;
         TargetPositions[playerId] = clampedPosition;
+        if (_state.BallOwnerId == playerId && !_ballActionActive)
+        {
+            BallPosition = clampedPosition;
+            ResetCarrySequence();
+        }
+        _nextIntentPlanTime = 0f;
         return true;
     }
 
@@ -376,6 +390,8 @@ public sealed partial class LiveMatchEngine
         _state.DefenderChallengeReadyTimes.Clear();
         _state.GroundDuel.Reset();
         _movementController.Reset();
+        _lastBallTouch.Reset();
+        _shotDiagnostics.Reset();
         _sideController.Reset();
         _state.VisualTime = 0;
         _synchronizedGameSeconds = 0d;
@@ -459,6 +475,9 @@ public sealed partial class LiveMatchEngine
         CarrierEscapes = 0;
         TacklesWon = 0;
         AerialDuels = 0;
+        AerialArrivals = 0;
+        AerialControlledReceptions = 0;
+        AerialHeaderTouches = 0;
         HeadersWon = 0;
         DefensiveHeaders = 0;
         HeaderShots = 0;
@@ -547,7 +566,7 @@ public sealed partial class LiveMatchEngine
         {
             string type = matchEvent.event_type.ToString();
             if (type is "goal" or "shot_on_target" or "shot_off_target" or "corner" or
-                "yellow_card" or "substitution" or "half_time" or "full_time")
+                "throw_in" or "yellow_card" or "substitution" or "half_time" or "full_time")
                 focusEvent = matchEvent;
         }
 

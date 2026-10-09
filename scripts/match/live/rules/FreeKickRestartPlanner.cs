@@ -96,13 +96,22 @@ public sealed class FreeKickRestartPlanner
         Vector2 restartMeters = FootballPitchDimensions.ToMeters(restartPosition);
         Vector2 fromBall = defenderMeters - restartMeters;
         float distanceMeters = fromBall.Length();
-        if (distanceMeters >= RequiredDefenderDistanceMeters)
+        if (distanceMeters >= RequiredDefenderDistanceMeters + 0.2f)
         {
             return defenderPosition;
         }
 
         Vector2 direction = distanceMeters > 0.05f ? fromBall / distanceMeters : Vector2.Down;
-        Vector2 legalPositionMeters = restartMeters + direction * RequiredDefenderDistanceMeters;
-        return SpaceEvaluator.ClampToPitch(FootballPitchDimensions.ToNormalized(legalPositionMeters));
+        Vector2 legalPositionMeters = restartMeters + direction * (RequiredDefenderDistanceMeters + 0.3f);
+        Vector2 legalPosition = SpaceEvaluator.ClampToPitch(FootballPitchDimensions.ToNormalized(legalPositionMeters));
+        if (FootballPitchDimensions.DistanceMeters(legalPosition, restartPosition) <
+            RequiredDefenderDistanceMeters + 0.2f)
+        {
+            // A radial push outside the pitch cannot satisfy the exclusion zone after clamping.
+            Vector2 towardCenter = FootballPitchDimensions.ToMeters(new Vector2(0.5f, 0.5f)) - restartMeters;
+            legalPosition = SpaceEvaluator.ClampToPitch(FootballPitchDimensions.ToNormalized(
+                restartMeters + towardCenter.Normalized() * (RequiredDefenderDistanceMeters + 0.3f)));
+        }
+        return legalPosition;
     }
 }

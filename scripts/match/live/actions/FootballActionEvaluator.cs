@@ -3,6 +3,11 @@ using System.Linq;
 
 public sealed class FootballActionEvaluator
 {
+    private const float InitialControlSeconds = 1.2f;
+    private const float ProtectPersistenceCostPerSecond = 0.22f;
+    private const float CarryPersistenceCostPerSecond = 0.10f;
+    private const float MaximumPersistenceCost = 0.75f;
+    private const float MeaningfulShotValue = 0.12f;
     private readonly FootballActionSelectionConfiguration _configuration;
 
     public FootballActionEvaluator(FootballActionSelectionConfiguration configuration)
@@ -22,6 +27,32 @@ public sealed class FootballActionEvaluator
         float turnoverRisk = candidate.TurnoverRisk * RiskWeight(candidate.ActionType);
         float executionDifficulty = candidate.ExecutionDifficulty * 0.34f;
         float phaseFit = PhaseFit(context, candidate);
+
+        if (candidate.ActionType == FootballActionType.Hold && !context.IsGoalkeeper)
+        {
+            // A short pause controls the ball; waiting indefinitely cannot remain the safest action.
+            float heldBeyondControl = Math.Max(0f, context.OwnerHeldSeconds - InitialControlSeconds);
+            phaseFit -= Math.Min(MaximumPersistenceCost, heldBeyondControl * ProtectPersistenceCostPerSecond);
+        }
+
+        if (candidate.ActionType is FootballActionType.Carry or FootballActionType.ProtectBall)
+        {
+            // Keeping the ball is uncertain under pressure; it is not a guaranteed reception.
+            possessionSecurity *= 1f - candidate.TurnoverRisk;
+            bool hasOutlet = context.PassOptions.Any(option => option.HasTarget &&
+                option.Selection.LaneRisk <= 0.65f && option.Selection.ReceiverSpaceMeters >= 2.5f);
+            bool blockedCarry = candidate.ActionType == FootballActionType.Carry &&
+                (context.ForwardSpaceMeters < 2f ||
+                 Math.Abs(context.ActorPosition.X - context.AttackingGoal.X) * FootballPitchDimensions.LengthMeters < 3f);
+            if (hasOutlet || context.ShotValue >= MeaningfulShotValue || blockedCarry)
+            {
+                float heldBeyondControl = Math.Max(0f, context.OwnerHeldSeconds - InitialControlSeconds);
+                float persistenceCost = candidate.ActionType == FootballActionType.ProtectBall
+                    ? ProtectPersistenceCostPerSecond
+                    : CarryPersistenceCostPerSecond;
+                phaseFit -= Math.Min(MaximumPersistenceCost, heldBeyondControl * persistenceCost);
+            }
+        }
 
         if (candidate.ActionType == FootballActionType.Carry && HasClearAdvantageOutlet(context))
         {
@@ -79,7 +110,7 @@ public sealed class FootballActionEvaluator
             FootballActionType.ThroughBall => 0.38f,
             FootballActionType.LoftedPass => 0.22f,
             FootballActionType.Cross => 0.27f,
-            FootballActionType.Shot => 0.62f,
+            FootballActionType.Shot => 0.78f,
             FootballActionType.Clearance => 0.20f,
             FootballActionType.GoalkeeperDistribution => 0.32f,
             _ => 0f
@@ -90,7 +121,7 @@ public sealed class FootballActionEvaluator
     {
         return actionType switch
         {
-            FootballActionType.Shot => 1.55f,
+            FootballActionType.Shot => 2.60f,
             FootballActionType.ThroughBall => 1.08f,
             FootballActionType.Cross => 0.92f,
             FootballActionType.Clearance => 1.05f,

@@ -1,15 +1,25 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+
+public sealed record LiveAerialRecord(int Arrivals, int ContestedDuels, int ControlledReceptions, int HeaderTouches = 0);
 
 public sealed class HeadlessLiveMatchResult
 {
-    public HeadlessLiveMatchResult(FootballMatchSimulation simulation, LiveMatchSnapshot finalSnapshot)
+    public HeadlessLiveMatchResult(FootballMatchSimulation simulation, LiveMatchSnapshot finalSnapshot,
+        IReadOnlyList<LiveShotRecord>? shots = null, LiveAerialRecord? aerial = null)
     {
         Simulation = simulation;
         FinalSnapshot = finalSnapshot;
+        Aerial = aerial;
+        Shots = new ReadOnlyCollection<LiveShotRecord>(
+            shots is null ? new List<LiveShotRecord>() : new List<LiveShotRecord>(shots));
     }
 
     public FootballMatchSimulation Simulation { get; }
     public LiveMatchSnapshot FinalSnapshot { get; }
+    public IReadOnlyList<LiveShotRecord> Shots { get; }
+    public LiveAerialRecord? Aerial { get; }
 }
 
 public sealed class HeadlessLiveMatchRunner
@@ -19,7 +29,8 @@ public sealed class HeadlessLiveMatchRunner
     public HeadlessLiveMatchResult RunToFullTime(
         FootballMatchSimulation simulation,
         MatchPlaybackSpeed speed = MatchPlaybackSpeed.Fastest,
-        double realStepSeconds = 0.05d)
+        double realStepSeconds = 0.05d,
+        Action<LiveMatchEngine>? observe = null)
     {
         ArgumentNullException.ThrowIfNull(simulation);
         if (simulation.home is null || simulation.away is null)
@@ -49,6 +60,7 @@ public sealed class HeadlessLiveMatchRunner
         {
             runtime.Advance(realStepSeconds);
             engine.AdvanceSynchronizedGameTime(runtime.LastAdvancedGameSeconds);
+            observe?.Invoke(engine);
             stepCount++;
         }
 
@@ -58,6 +70,8 @@ public sealed class HeadlessLiveMatchRunner
         }
 
         engine.Execute(new LiveMatchCommand(LiveMatchCommandKind.Pause));
-        return new HeadlessLiveMatchResult(simulation, engine.GetSnapshot());
+        return new HeadlessLiveMatchResult(simulation, engine.GetSnapshot(), engine.ShotRecords,
+            new LiveAerialRecord(engine.AerialArrivals, engine.AerialDuels,
+                engine.AerialControlledReceptions, engine.AerialHeaderTouches));
     }
 }

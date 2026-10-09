@@ -23,16 +23,21 @@ public sealed partial class LiveMatchEngine
                 return;
             }
             float progress = Mathf.Clamp(_ballActionElapsed / Mathf.Max(_ballActionDuration, 0.01f), 0, 1);
+            Vector2 previousBallPosition = BallPosition;
             BallPosition = _ballActionFrom.Lerp(_ballActionTo, progress);
-            _ballVisualHeight = _ballActionKind == BallActionKind.Shot
+            _ballVisualHeight = _ballActionKind is BallActionKind.Shot or BallActionKind.ThrowIn
                 ? Mathf.Sin(progress * Mathf.Pi) *
                   _ballActionArc * FootballPitchDimensions.WidthMeters
                 : 0f;
             _ballVerticalVelocityMetersPerSecond = 0f;
-            if (progress is >= 0.14f and <= 0.94f &&
-                _ballActionKind is BallActionKind.Pass or BallActionKind.ThroughBall or BallActionKind.Cross)
+            if (_ballActionKind == BallActionKind.Shot && TryResolveShotContact(previousBallPosition))
             {
-                TryInterceptMovingBall();
+                return;
+            }
+            if (progress is >= 0.14f and <= 0.94f &&
+                _ballActionKind is BallActionKind.Pass or BallActionKind.ThroughBall or BallActionKind.Cross or BallActionKind.ThrowIn)
+            {
+                TryInterceptMovingBall(previousBallPosition);
             }
             if (progress >= 1)
             {
@@ -98,10 +103,9 @@ public sealed partial class LiveMatchEngine
         if (type == "corner")
         {
             float goalX = AttackingGoalX(matchEvent.team_id);
-            BallPosition = new Vector2(goalX < 0.5f ? 0.018f : 0.982f, Simulation.current_minute % 2 == 0 ? 0.035f : 0.965f);
-            StringName receiver = _primaryRunnerId != new StringName() ? _primaryRunnerId : ChooseOwner(matchEvent.team_id, true);
-            StartBallAction(new Vector2(goalX < 0.5f ? 0.12f : 0.88f, 0.5f), 0.68f, 0.055f, receiver, BallActionKind.Cross);
-            SetAction("Quả tạt từ chấm phạt góc");
+            ScheduleRestart("corner", matchEvent.team_id,
+                new Vector2(goalX, Simulation.current_minute % 2 == 0 ? 0.035f : 0.965f));
+            SetAction("Hai đội chuẩn bị thực hiện phạt góc");
             return;
         }
         if (type == "full_time")
@@ -117,6 +121,13 @@ public sealed partial class LiveMatchEngine
             _state.BallOwnerId = new StringName();
             _runtime.SetPhase(LiveMatchPhase.FullTime);
             SetAction("Hết trận");
+            return;
+        }
+        if (type == "throw_in")
+        {
+            ScheduleRestart("throw_in", matchEvent.team_id,
+                new Vector2(BallPosition.X, BallPosition.Y < 0.5f ? 0.035f : 0.965f));
+            SetAction("Hai đội chuẩn bị thực hiện ném biên");
             return;
         }
         if (type is "substitution" or "tactic") return;
@@ -235,6 +246,7 @@ public sealed partial class LiveMatchEngine
         _state.IsBallVisible = true;
         _actionSourceId = _state.BallOwnerId;
         _actionSourceTeamId = _actionSourceId != new StringName() && _playerTeams.ContainsKey(_actionSourceId) ? _playerTeams[_actionSourceId] : _state.ActiveTeamId;
+        _lastBallTouch.Record(_actionSourceId, _actionSourceTeamId);
         _ballActionActive = true;
         _ballActionFrom = BallPosition;
         _ballActionTo = destination;
@@ -356,7 +368,7 @@ public sealed partial class LiveMatchEngine
             CompletePassReception(intendedReceiverId, completedKind);
         }
         else if (completedKind is BallActionKind.Pass or BallActionKind.ThroughBall or
-                 BallActionKind.LoftedPass or BallActionKind.Cross)
+                 BallActionKind.LoftedPass or BallActionKind.Cross or BallActionKind.ThrowIn)
         {
             CompletePassReception(intendedReceiverId, completedKind);
         }
@@ -415,8 +427,11 @@ public sealed partial class LiveMatchEngine
                 return;
             }
 
-            CompletedPasses++;
-            Simulation!.RegisterLivePassCompletion(_actionSourceTeamId);
+            if (completedKind != BallActionKind.ThrowIn)
+            {
+                CompletedPasses++;
+                Simulation!.RegisterLivePassCompletion(_actionSourceTeamId);
+            }
             _state.PossessionSequence.RecordCompletedPass(
                 _actionSourceTeamId,
                 _actionSourceId,
@@ -437,6 +452,7 @@ public sealed partial class LiveMatchEngine
 
     private void ResolveFirstTouchError(StringName receiverId, FirstTouchResolution touch)
     {
+        _lastBallTouch.Record(receiverId, _playerTeams[receiverId]);
         FirstTouchErrors++;
         Simulation!.RegisterLiveFirstTouchError(_playerTeams[receiverId]);
         Vector2 flightVectorMeters = FootballPitchDimensions.ToMeters(_ballActionTo) -

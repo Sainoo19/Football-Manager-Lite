@@ -45,6 +45,7 @@ public sealed class OffBallRoleAllocator
             }
         }
         TeamSpacingResolver.Resolve(world, intents);
+        OnsideRunPlanner.ConstrainTargets(world, intents);
         return intents;
     }
 

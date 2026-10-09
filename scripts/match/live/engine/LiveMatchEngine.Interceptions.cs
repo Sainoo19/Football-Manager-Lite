@@ -2,7 +2,7 @@ using Godot;
 
 public sealed partial class LiveMatchEngine
 {
-    private void TryInterceptMovingBall()
+    private void TryInterceptMovingBall(Vector2 previousBallPosition)
     {
         if (Simulation is null || _actionSourceTeamId == new StringName()) return;
         if (_aerialFlightActive)
@@ -26,7 +26,10 @@ public sealed partial class LiveMatchEngine
                 continue;
             }
 
-            float candidateDistance = FootballPitchDimensions.DistanceMeters(CurrentPositions[candidateId], BallPosition);
+            float candidateDistance = DistanceToSegment(
+                FootballPitchDimensions.ToMeters(CurrentPositions[candidateId]),
+                FootballPitchDimensions.ToMeters(previousBallPosition),
+                FootballPitchDimensions.ToMeters(BallPosition));
             if (candidateDistance <= contactDistanceMeters && candidateDistance < distance)
             {
                 defenderId = candidateId;
@@ -57,6 +60,9 @@ public sealed partial class LiveMatchEngine
         _pendingOffsideReceiverId = new StringName();
         _ballVisualHeight = 0f;
         Interceptions++;
+        _shotContactResolver.TryContact(previousBallPosition, BallPosition, CurrentPositions[defenderId],
+            contactDistanceMeters, out Vector2 contactPosition, out _);
+        BallPosition = contactPosition;
         GivePossessionTo(defenderId, 0.32f);
         SetAction(intendedReceiverId != new StringName()
             ? $"{PlayerName(defenderId)} đọc đường chuyền của {PlayerName(_actionSourceId)} cho " +

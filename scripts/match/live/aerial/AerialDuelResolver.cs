@@ -8,7 +8,8 @@ public enum AerialDuelOutcome
     HeaderShot,
     DefensiveHeaderClearance,
     GoalkeeperCatch,
-    GoalkeeperPunch
+    GoalkeeperPunch,
+    ControlledReception
 }
 
 public readonly struct AerialDuelCandidate
@@ -79,7 +80,7 @@ public readonly struct AerialDuelResolution
 
 public sealed class AerialDuelResolver
 {
-    private const float MaximumContestDistanceMeters = 3.2f;
+    public const float MaximumContestDistanceMeters = 3.2f;
     private readonly float _headerShotProbability;
 
     public AerialDuelResolver(float headerShotProbability = 0.74f)
@@ -90,8 +91,10 @@ public sealed class AerialDuelResolver
     public AerialDuelResolution Resolve(
         IReadOnlyList<AerialDuelCandidate> candidates,
         int nearbyOpponentCount,
-        float actionRoll)
+        float actionRoll,
+        bool allowControlledReception = false)
     {
+        System.ArgumentNullException.ThrowIfNull(candidates);
         AerialDuelCandidate? winner = null;
         float winningScore = float.NegativeInfinity;
         foreach (AerialDuelCandidate candidate in candidates)
@@ -129,6 +132,13 @@ public sealed class AerialDuelResolver
                     : AerialDuelOutcome.GoalkeeperPunch);
         }
 
+        if (allowControlledReception && !IsContested(candidates) &&
+            !(selected.IsAttackingTeam && selected.DistanceToAttackingGoalMeters <= 16f &&
+              selected.Role is "ST" or "LW" or "RW" or "AM"))
+        {
+            return new AerialDuelResolution(selected.PlayerId, AerialDuelOutcome.ControlledReception);
+        }
+
         if (!selected.IsAttackingTeam)
         {
             return new AerialDuelResolution(
@@ -147,6 +157,23 @@ public sealed class AerialDuelResolver
             return new AerialDuelResolution(selected.PlayerId, AerialDuelOutcome.HeaderPass);
         }
         return new AerialDuelResolution(selected.PlayerId, AerialDuelOutcome.LooseSecondBall);
+    }
+
+    public static bool IsContested(IReadOnlyList<AerialDuelCandidate> candidates)
+    {
+        System.ArgumentNullException.ThrowIfNull(candidates);
+        bool attacking = false;
+        bool defending = false;
+        foreach (AerialDuelCandidate candidate in candidates)
+        {
+            if (candidate.DistanceToLandingMeters > MaximumContestDistanceMeters)
+            {
+                continue;
+            }
+            attacking |= candidate.IsAttackingTeam;
+            defending |= !candidate.IsAttackingTeam;
+        }
+        return attacking && defending;
     }
 
     private static float ContestScore(AerialDuelCandidate candidate)

@@ -13,6 +13,10 @@ public static class M1ActionSelectionTests
         VerifyGoalkeeperWithoutOptionCanHold();
         VerifyDeterminismAndCandidateOrderIndependence();
         VerifyCommitmentSurvivesNormalPlayerMovement();
+        VerifyClearShotIsSelectedWithoutWaitingForADuel();
+        VerifyProlongedProtectionUsesAnAvailableOutlet();
+        VerifyPassCreatesAUsableShootingChance();
+        VerifyBlockedCarryDoesNotBecomeAnIndefiniteHold();
         GD.Print("PASS: M1 unified action selection chấm mọi candidate trên cùng pipeline deterministic.");
     }
 
@@ -148,10 +152,54 @@ public static class M1ActionSelectionTests
             "Cầu thủ dịch chuyển bình thường không được làm mất commitment của cùng một ý định bóng đá.");
     }
 
+    private static void VerifyClearShotIsSelectedWithoutWaitingForADuel()
+    {
+        FootballActionDecision decision = Decide(CreateContext(
+            role: "ST", attackProgress: 0.86f, shotValue: 0.45f,
+            forwardSpaceMeters: 3f, finishing: 85, isDirectAttack: true));
+        Check(decision.Selected.ActionType == FootballActionType.Shot,
+            "Một cơ hội sút rõ ràng phải được chọn trực tiếp, không chờ đủ số nhịp tranh chấp.");
+    }
+
+    private static void VerifyProlongedProtectionUsesAnAvailableOutlet()
+    {
+        FootballPassOption outlet = Pass("outlet", 0f, 8f, 0.42f, 3.5f, FootballActionType.GroundPass);
+        FootballActionDecision decision = Decide(CreateContext(
+            isUnderPressure: true, pressureDistanceMeters: 1.3f,
+            forwardSpaceMeters: 1f, passOptions: new[] { outlet }, ownerHeldSeconds: 6f));
+        Check(decision.Selected.ActionType == FootballActionType.GroundPass,
+            "Che bóng lâu dưới áp lực phải nhường chỗ cho phương án chuyền khả thi.");
+    }
+
     private static FootballActionDecision Decide(FootballActionContext context)
     {
         return new FootballActionCoordinator(
             FootballActionSelectionConfiguration.CreateM1Defaults()).Decide(context);
+    }
+
+    private static void VerifyPassCreatesAUsableShootingChance()
+    {
+        PassSelection central = new("central_receiver", 0f, 12f, 18f, 0.15f, 7f);
+        PassSelection wide = new("wide_receiver", 0f, 12f, 18f, 0.15f, 7f);
+        FootballActionDecision decision = Decide(CreateContext(
+            isUnderPressure: true, pressureDistanceMeters: 1.5f, forwardSpaceMeters: 1f,
+            ownerHeldSeconds: 5f,
+            passOptions: new[]
+            {
+                new FootballPassOption(central, new Vector2(0.88f, 0.5f), FootballActionType.GroundPass),
+                new FootballPassOption(wide, new Vector2(0.88f, 0.9f), FootballActionType.GroundPass)
+            }));
+        Check(decision.Selected.ActionType == FootballActionType.GroundPass &&
+              decision.Selected.TargetPlayerId == "central_receiver",
+            "Khi độ an toàn tương đương, đường chuyền cho người trống gần cầu môn phải tạo giá trị hơn đường ra xa góc sút.");
+    }
+
+    private static void VerifyBlockedCarryDoesNotBecomeAnIndefiniteHold()
+    {
+        FootballActionDecision decision = Decide(CreateContext(
+            role: "LW", forwardSpaceMeters: 0f, ownerHeldSeconds: 20f));
+        Check(decision.Selected.ActionType != FootballActionType.Hold,
+            "Không còn khoảng tiến lên vẫn phải tìm hành động chơi bóng thay vì giữ bóng vô hạn.");
     }
 
     private static FootballActionContext CreateContext(
@@ -166,7 +214,8 @@ public static class M1ActionSelectionTests
         int dribbling = 72,
         int finishing = 68,
         Vector2? actorPosition = null,
-        IReadOnlyList<FootballPassOption>? passOptions = null)
+        IReadOnlyList<FootballPassOption>? passOptions = null,
+        float ownerHeldSeconds = 0.8f)
     {
         return new FootballActionContext(
             "actor",
@@ -180,7 +229,7 @@ public static class M1ActionSelectionTests
             pressureDistanceMeters,
             isDirectAttack,
             false,
-            0.8f,
+            ownerHeldSeconds,
             3f,
             1,
             75,

@@ -5,6 +5,11 @@ using Godot.Collections;
 
 public static class LiveMatchEngineIntegrationTests
 {
+    public static void RunGoalkeeperConfrontation()
+    {
+        VerifyGoalkeeperCanConfrontControlledBall();
+    }
+
     public static void Run()
     {
         VerifyHeadlessMatchCompletesDeterministically();
@@ -54,6 +59,15 @@ public static class LiveMatchEngineIntegrationTests
         }
         engine.OverridePlayerPosition(carrierId, carrierPosition);
         engine.OverridePlayerPosition(goalkeeperId, goalkeeperPosition);
+        // Keep outlets away so this fixture exercises the goalkeeper duel rather than an early relief pass.
+        foreach (StringName playerId in engine.PositionView.Keys.ToArray())
+        {
+            if (playerId != carrierId && engine.PlayerTeams[playerId] == attackingTeamId &&
+                engine.PlayerRoles[playerId] != "GK")
+            {
+                engine.OverridePlayerPosition(playerId, new Vector2(0.5f, engine.PositionView[playerId].Y));
+            }
+        }
         Check(engine.Execute(new LiveMatchCommand(LiveMatchCommandKind.Play)), "Tình huống đối mặt phải chạy được.");
 
         bool observedGoalkeeperPressure = false;
@@ -61,7 +75,8 @@ public static class LiveMatchEngineIntegrationTests
         for (int step = 0; step < 80; step++)
         {
             engine.AdvanceGameTime(0.05d);
-            observedGoalkeeperPressure |= engine.CurrentIntents.TryGetValue(
+            observedGoalkeeperPressure |= engine.ActiveGroundDuelDefenderId == goalkeeperId ||
+                engine.CurrentIntents.TryGetValue(
                 goalkeeperId,
                 out PlayerIntent? goalkeeperIntent) &&
                 goalkeeperIntent.Kind == PlayerIntentKind.CloseDownBall;

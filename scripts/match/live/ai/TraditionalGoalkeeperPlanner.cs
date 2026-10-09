@@ -12,9 +12,15 @@ public sealed class TraditionalGoalkeeperPlanner
         bool defendingFlight = teamId != world.PossessionTeamId;
         if (defendingFlight && world.IsShotInFlight)
         {
-            return SpaceEvaluator.ClampToPitch(new Vector2(
-                goal.X + direction * (1.4f / FootballPitchDimensions.LengthMeters),
-                Mathf.Clamp(world.BallDestination.Y, 0.36f, 0.64f)));
+            Vector2 keeper = world.Positions[goalkeeperId];
+            float depth = Mathf.Clamp(Mathf.Abs(keeper.X - goal.X) * FootballPitchDimensions.LengthMeters, 1.4f, 4f);
+            float targetX = goal.X + direction * depth / FootballPitchDimensions.LengthMeters;
+            float remainingTravel = world.BallDestination.X - world.BallPosition.X;
+            float progress = Mathf.Abs(remainingTravel) > 0.001f
+                ? Mathf.Clamp((targetX - world.BallPosition.X) / remainingTravel, 0f, 1f)
+                : 1f;
+            float targetY = Mathf.Lerp(world.BallPosition.Y, world.BallDestination.Y, progress);
+            return PlayerPitchBoundary.Clamp(new Vector2(targetX, ClampGoalLane(targetY)));
         }
         if (ShouldRushControlledBall(world, goalkeeperId, teamId))
         {
@@ -38,9 +44,26 @@ public sealed class TraditionalGoalkeeperPlanner
             laneWeight = 0.68f;
         }
 
-        return SpaceEvaluator.ClampToPitch(new Vector2(
-            goal.X + direction * (depthMeters / FootballPitchDimensions.LengthMeters),
-            Mathf.Lerp(0.5f, claimingCross ? world.BallDestination.Y : world.BallPosition.Y, laneWeight)));
+        if (claimingCross)
+        {
+            return SpaceEvaluator.ClampToPitch(new Vector2(
+                goal.X + direction * depthMeters / FootballPitchDimensions.LengthMeters,
+                Mathf.Lerp(0.5f, world.BallDestination.Y, laneWeight)));
+        }
+        // Cover the angle from the goal centre instead of following a winger outside the posts.
+        Vector2 towardBall = FootballPitchDimensions.ToMeters(world.BallPosition) - FootballPitchDimensions.ToMeters(goal);
+        Vector2 stance = FootballPitchDimensions.ToMeters(goal) + towardBall.Normalized() * depthMeters;
+        Vector2 normalizedStance = FootballPitchDimensions.ToNormalized(stance);
+        normalizedStance.Y = ClampGoalLane(normalizedStance.Y);
+        return PlayerPitchBoundary.Clamp(normalizedStance);
+    }
+
+    private static float ClampGoalLane(float lane)
+    {
+        const float postAllowanceMeters = 0.8f;
+        float halfWidth = (FootballPitchDimensions.GoalWidthMeters * 0.5f + postAllowanceMeters) /
+                          FootballPitchDimensions.WidthMeters;
+        return Mathf.Clamp(lane, 0.5f - halfWidth, 0.5f + halfWidth);
     }
 
     public bool ShouldRushControlledBall(

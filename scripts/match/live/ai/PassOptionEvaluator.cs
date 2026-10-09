@@ -71,7 +71,13 @@ public sealed class PassOptionEvaluator
         }
         if (attackingCarrier && attackProgress >= 0.70f)
         {
-            return !defensiveCandidate && passingLaneRisk <= 0.64f;
+            if (defensiveCandidate)
+            {
+                // A safe nearby recycle outlet remains valid when the forward route is blocked.
+                return preferSafe && forwardGainMeters >= -18f && distanceMeters <= 24f &&
+                       passingLaneRisk <= 0.45f;
+            }
+            return passingLaneRisk <= 0.64f;
         }
 
         bool aggressiveTransition = attackingTransition && !preferSafe;

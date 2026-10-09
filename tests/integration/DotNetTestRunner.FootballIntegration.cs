@@ -9,6 +9,32 @@ public partial class DotNetTestRunner : Node
     {
         try
         {
+            if (OS.GetCmdlineUserArgs().Contains("--suite=core-behaviour"))
+            {
+                CoreBehaviourTests.Run();
+                GroundDuelTests.Run();
+                M2PhaseIntegrationTests.Run();
+                OffBallRoleAllocatorTests.Run();
+                M3OffBallIntegrationTests.Run();
+                AerialBallScenarioIntegrationTests.Run();
+                GetTree().Quit(0);
+                return;
+            }
+            if (OS.GetCmdlineUserArgs().Contains("--suite=football-fundamentals"))
+            {
+                M1ActionSelectionTests.Run();
+                FootballFundamentalsRegressionTests.Run();
+                MatchRefinementTests.Run();
+                CoreBehaviourTests.Run();
+                MatchFlowRegressionTests.Run();
+                FootballFundamentalsIntegrationTests.Run();
+                LiveMatchEngineIntegrationTests.RunGoalkeeperConfrontation();
+                GroundDuelScenarioIntegrationTests.Run();
+                AerialBallScenarioIntegrationTests.Run();
+                GD.Print("PASS: football fundamentals focused regression suite.");
+                GetTree().Quit(0);
+                return;
+            }
             TestSquadLimits();
             TestLiveMatchClock();
             PlayerPositionInterpolatorTests.Run();
@@ -37,6 +63,11 @@ public partial class DotNetTestRunner : Node
             BalanceBatchTests.Run();
             M0ArchitectureBoundaryTests.Run();
             M1ActionSelectionTests.Run();
+            FootballFundamentalsRegressionTests.Run();
+            MatchRefinementTests.Run();
+            CoreBehaviourTests.Run();
+            MatchFlowRegressionTests.Run();
+            FootballFundamentalsIntegrationTests.Run();
             M1ProductionPipelineIntegrationTests.Run();
             TeamPhaseCoordinatorTests.Run();
             M2PhaseIntegrationTests.Run();

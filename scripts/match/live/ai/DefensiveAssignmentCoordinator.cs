@@ -30,9 +30,10 @@ public sealed class DefensiveAssignmentCoordinator
             available.Remove(presser);
         }
 
-        StringName cover = SelectClosest(world, available, presser == new StringName()
-            ? world.BallPosition
-            : world.Positions[presser]);
+        AssignThreats(world, teamId, phase, available, intents);
+
+        StringName cover = SelectClosest(world, available,
+            world.BallPosition.Lerp(world.OwnGoal(teamId), 0.30f));
         if (cover != new StringName())
         {
             intents[cover] = Intent(
@@ -56,7 +57,6 @@ public sealed class DefensiveAssignmentCoordinator
             available.Remove(laneBlocker);
         }
 
-        AssignThreats(world, teamId, phase, available, intents);
         AssignRemaining(world, teamId, phase, available, intents);
         AssignGoalkeeper(world, teamId, phase, intents);
     }
@@ -75,7 +75,8 @@ public sealed class DefensiveAssignmentCoordinator
             float goalProtection = FootballPitchDimensions.DistanceMeters(world.Positions[playerId], ownGoal);
             bool centralDefender = world.PlayerRoles[playerId] == "CB";
             bool ballNearOwnGoal = FootballPitchDimensions.DistanceMeters(world.BallPosition, ownGoal) < 30f;
-            float abandonDangerPenalty = centralDefender && ballNearOwnGoal ? 11f : 0f;
+            // Keep a comparable midfielder pressing, but do not ignore a CB who can stop an immediate shot.
+            float abandonDangerPenalty = centralDefender && ballNearOwnGoal && ballDistance > 4f ? 4f : 0f;
             float score = ballDistance + abandonDangerPenalty - Mathf.Clamp(goalProtection / 100f, 0f, 0.25f);
             if (score < bestScore ||
                 Mathf.IsEqualApprox(score, bestScore) &&
@@ -107,7 +108,8 @@ public sealed class DefensiveAssignmentCoordinator
         List<StringName> threats = DangerousThreats(world, teamId);
         foreach (StringName threatId in threats)
         {
-            if (available.Count == 0)
+            // Keep one cover player and one lane blocker after assigning the most dangerous receivers.
+            if (available.Count <= 2)
             {
                 break;
             }

@@ -12,6 +12,7 @@ public sealed class GroundDuelSequenceState
 
     public bool HasCarrier => CarrierId != new StringName();
     public bool HasDefender => DefenderId != new StringName();
+    public bool HasEngagement { get; private set; }
 
     public void Begin(StringName carrierId, StringName defenderId, bool isBackToGoal)
     {
@@ -21,11 +22,18 @@ public sealed class GroundDuelSequenceState
         ExchangeCount = 0;
         CurrentTouch = default;
         CurrentEngagement = default;
+        HasEngagement = false;
         IsBackToGoal = isBackToGoal;
     }
 
     public void AttachDefender(StringName defenderId)
     {
+        if (DefenderId != defenderId)
+        {
+            // An engagement target belongs to the defender who planned it.
+            HasEngagement = false;
+            CurrentEngagement = default;
+        }
         DefenderId = defenderId;
     }
 
@@ -38,6 +46,7 @@ public sealed class GroundDuelSequenceState
     public void RecordEngagement(DefenderEngagementPlan engagement)
     {
         CurrentEngagement = engagement;
+        HasEngagement = true;
         if (engagement.Type is not (DefenderEngagementType.CloseDown or DefenderEngagementType.Recover))
         {
             ExchangeCount++;
@@ -52,6 +61,7 @@ public sealed class GroundDuelSequenceState
         ExchangeCount = 0;
         CurrentTouch = default;
         CurrentEngagement = default;
+        HasEngagement = false;
         IsBackToGoal = false;
     }
 }

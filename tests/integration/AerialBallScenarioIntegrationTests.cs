@@ -51,9 +51,10 @@ public static class AerialBallScenarioIntegrationTests
                                   engine.BallVerticalVelocityMetersPerSecond > 0.1f;
             observedFallingBall |= engine.IsAerialBall &&
                                    engine.BallVerticalVelocityMetersPerSecond < -0.1f;
-            int aerialContestants = engine.CurrentIntents.Values.Count(intent =>
-                intent.Kind is PlayerIntentKind.ContestAerialBall or PlayerIntentKind.ClaimAerialBall);
-            observedBothTeamsAtLanding |= aerialContestants >= 2;
+            int aerialTeams = engine.CurrentIntents
+                .Where(pair => pair.Value.Kind is PlayerIntentKind.ContestAerialBall or PlayerIntentKind.ClaimAerialBall)
+                .Select(pair => engine.PlayerTeams[pair.Key]).Distinct().Count();
+            observedBothTeamsAtLanding |= aerialTeams >= 2;
         }
 
         LiveMatchMetrics metrics = engine.GetSnapshot().Metrics;
@@ -64,11 +65,13 @@ public static class AerialBallScenarioIntegrationTests
         Check(
             observedBothTeamsAtLanding,
             "Cầu thủ hai đội phải chạy tới điểm rơi thay vì chỉ receiver được chọn di chuyển.");
-        Check(metrics.AerialDuels >= 1, "Mỗi sandbox bóng bổng phải tạo ít nhất một pha không chiến.");
+        Check(engine.AerialArrivals >= 1 && metrics.AerialDuels <= engine.AerialArrivals &&
+              metrics.HeadersWon <= metrics.AerialDuels,
+            "Bóng phải đến điểm rơi; chỉ pha hai đội đủ gần tranh bóng mới được tính là không chiến.");
         Check(
-            metrics.HeadersWon + metrics.GoalkeeperAerialCatches +
-            metrics.GoalkeeperPunches + metrics.AerialSecondBalls >= 1,
-            "Pha không chiến phải kết thúc bằng đánh đầu, thủ môn xử lý hoặc bóng hai.");
+            engine.AerialHeaderTouches + metrics.GoalkeeperAerialCatches +
+            metrics.GoalkeeperPunches + metrics.AerialSecondBalls + engine.AerialControlledReceptions >= 1,
+            "Bóng đến điểm rơi phải dẫn tới khống chế, đánh đầu, thủ môn xử lý hoặc bóng hai.");
     }
 
     private static void VerifyGroundThroughBallStaysOnTheGround()

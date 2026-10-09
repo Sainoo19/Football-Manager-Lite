@@ -142,7 +142,7 @@ public sealed class DefenderEngagementPlanner
         {
             return DefenderEngagementType.CloseDown;
         }
-        if (context.ExchangeCount < 2)
+        if (context.ExchangeCount < 2 && context.TouchType != DribbleTouchType.KnockOn)
         {
             return DefenderEngagementType.Jockey;
         }
