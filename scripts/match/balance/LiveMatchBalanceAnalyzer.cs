@@ -84,7 +84,9 @@ public sealed class LiveMatchBalanceAnalyzer
                 "Số cú sút trúng đích lớn hơn tổng số cú sút.",
                 record.Seed);
         }
-        if (record.Goals > record.ShotsOnTarget)
+        // Rebounds and own goals that roll over the line are goals without a shot on target.
+        int goalsWithoutShot = record.GoalRecords.Count(goal => goal.Situation is "own_goal" or "loose_ball");
+        if (record.Goals - goalsWithoutShot > record.ShotsOnTarget)
         {
             journal.AddCodeBug(
                 BalanceIssueSeverity.Error,

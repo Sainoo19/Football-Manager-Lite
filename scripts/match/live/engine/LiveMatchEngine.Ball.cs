@@ -247,6 +247,21 @@ public sealed partial class LiveMatchEngine
         _actionSourceId = _state.BallOwnerId;
         _actionSourceTeamId = _actionSourceId != new StringName() && _playerTeams.ContainsKey(_actionSourceId) ? _playerTeams[_actionSourceId] : _state.ActiveTeamId;
         _lastBallTouch.Record(_actionSourceId, _actionSourceTeamId);
+        if (kind == BallActionKind.ThrowIn)
+        {
+            _offsideExposure.Clear();
+        }
+        else
+        {
+            _offsideExposure.Capture(
+                _offsideRule,
+                _actionSourceTeamId,
+                _actionSourceId,
+                BallPosition,
+                AttackDirection(_actionSourceTeamId),
+                CurrentPositions,
+                _playerTeams);
+        }
         _ballActionActive = true;
         _ballActionFrom = BallPosition;
         _ballActionTo = destination;
@@ -470,7 +485,7 @@ public sealed partial class LiveMatchEngine
     {
         if (Simulation is null)
             return;
-        StringName attackingTeamId = _actionSourceTeamId;
+        StringName attackingTeamId = _playerTeams.GetValueOrDefault(receiverId, _actionSourceTeamId);
         StringName defendingTeamId = attackingTeamId == Simulation.home.team.id
             ? Simulation.away.team.id
             : Simulation.home.team.id;

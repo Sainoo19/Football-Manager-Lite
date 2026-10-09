@@ -444,7 +444,12 @@ public sealed partial class LiveMatchEngine
         StartDribbleTouch(ownerId, escapingPressure);
     }
 
-    private void ResolveLiveFoul(StringName offenderId, StringName victimId, float contactDistanceMeters)
+    private void ResolveLiveFoul(
+        StringName offenderId,
+        StringName victimId,
+        float contactDistanceMeters,
+        DefenderEngagementType engagementType,
+        bool challengeFromBehind)
     {
         if (Simulation is null)
         {
@@ -475,6 +480,16 @@ public sealed partial class LiveMatchEngine
                 _attackProgress,
                 contactDistanceMeters,
                 DecisionRoll(victimId, offenderId, _decisionSerial + 97)));
+        _foulRecords.Add(new LiveFoulRecord(
+            _simulationTimeSeconds,
+            _playerRoles[offenderId],
+            engagementType.ToString(),
+            challengeFromBehind,
+            awardsPenalty,
+            playsAdvantage,
+            FootballPitchDimensions.DistanceMeters(BallPosition, new Vector2(OwnGoalX(foulingTeamId), 0.5f)),
+            PlayerSpeed(offenderId),
+            PlayerSpeed(victimId)));
         if (playsAdvantage)
         {
             FootballMatchEvent? advantageEvent = Simulation.RegisterLiveAdvantage(

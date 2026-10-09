@@ -33,6 +33,10 @@ public partial class LiveMatchBalanceBatchRunner : Node
                 "speed-audits",
                 configuration.SpeedParityAuditCount);
             long firstSeed = ParseLong(arguments, "seed", 202607180000L);
+            // Lets one match of a larger batch be replayed with the same team pairing.
+            int startIndex = ParseNonNegativeInt(arguments, "start-index", 0);
+            // "away" keeps the game's behaviour; "both" lets the AI substitute for both teams symmetrically.
+            bool aiSubstitutesHome = arguments.GetValueOrDefault("ai-substitutions", "away") == "both";
             bool flowDiagnosticsEnabled = arguments.GetValueOrDefault("flow-diagnostics", "false") == "true";
             string outputDirectory = arguments.GetValueOrDefault(
                 "output",
@@ -52,19 +56,21 @@ public partial class LiveMatchBalanceBatchRunner : Node
             for (int index = 0; index < matchCount; index++)
             {
                 long seed = firstSeed + index;
-                (FootballTeam home, FootballTeam away) = SelectTeams(teams, index);
+                (FootballTeam home, FootballTeam away) = SelectTeams(teams, startIndex + index);
                 try
                 {
                     MatchFlowDiagnostics flow = new();
+                    FootballMatchSimulation simulation = new FootballMatchSimulation().setup(home, away, seed);
+                    simulation.ai_substitutions_for_home = aiSubstitutesHome;
                     HeadlessLiveMatchResult result = runner.RunToFullTime(
-                        new FootballMatchSimulation().setup(home, away, seed),
+                        simulation,
                         MatchPlaybackSpeed.Fastest,
                         realStepSeconds: flowDiagnosticsEnabled ? 0.0005d : 0.05d,
                         observe: flowDiagnosticsEnabled ? engine => flow.Observe(engine) : null);
                     // Records are copied only at the end, outside the simulation loop.
                     if (flowDiagnosticsEnabled)
                     {
-                        flowRecords.Add(new { seed, flow, shots = result.Shots, aerial = result.Aerial });
+                        flowRecords.Add(new { seed, flow, shots = result.Shots, aerial = result.Aerial, fouls = result.Fouls });
                         if (flow.MaximumStationaryLooseBallSeconds > 30d || flow.MaximumRestartWaitSeconds > 60d ||
                             flow.MaximumOwnerHoldSeconds > 30f)
                         {
@@ -78,6 +84,7 @@ public partial class LiveMatchBalanceBatchRunner : Node
                 }
                 catch (Exception exception)
                 {
+                    GD.PrintErr($"BATCH_MATCH_EXCEPTION seed={seed}: {exception}");
                     journal.AddCodeBug(
                         BalanceIssueSeverity.Error,
                         "BATCH_MATCH_EXCEPTION",

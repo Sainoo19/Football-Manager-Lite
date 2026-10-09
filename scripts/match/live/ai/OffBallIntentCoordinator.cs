@@ -86,7 +86,7 @@ public sealed class OffBallIntentCoordinator
         {
             TeamSpacingResolver.Resolve(world, planned);
         }
-        OnsideRunPlanner.ConstrainTargets(world, planned);
+        OnsideRunPlanner.ConstrainTargets(world, planned, _configuration);
         Observe(world, planned);
         return planned;
     }
@@ -135,6 +135,12 @@ public sealed class OffBallIntentCoordinator
             world.GameTimeSeconds < previous.ExpiresAt &&
             CanRetain(world, playerId, previous.Intent, next))
         {
+            if (IsDefensivePositionAssignment(previous.Intent.Assignment) &&
+                IsDefensivePositionAssignment(next.Assignment))
+            {
+                // A zonal defender keeps the role but must follow the current ball, not a stale target.
+                return false;
+            }
             // Retain the marker identity, not an obsolete location of a moving opponent.
             planned[playerId] = previous.Intent.Assignment == OffBallAssignmentKind.TrackRunner
                 ? new PlayerIntent(previous.Intent.Kind,
@@ -357,7 +363,15 @@ public sealed class OffBallIntentCoordinator
             OffBallAssignmentKind.CarryBall or
             OffBallAssignmentKind.ReceivePass or
             OffBallAssignmentKind.PressBall or
+            OffBallAssignmentKind.BlockShotLine or
             OffBallAssignmentKind.ChaseLooseBall;
+    }
+
+    private static bool IsDefensivePositionAssignment(OffBallAssignmentKind assignment)
+    {
+        return assignment is OffBallAssignmentKind.ProtectBox or
+            OffBallAssignmentKind.HoldLine or
+            OffBallAssignmentKind.RecoverGoalSide;
     }
 
     private static int AssignmentFamily(OffBallAssignmentKind assignment)

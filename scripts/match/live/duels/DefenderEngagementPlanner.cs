@@ -147,6 +147,13 @@ public sealed class DefenderEngagementPlanner
             return DefenderEngagementType.Jockey;
         }
         if (context.IsInsideOwnPenaltyArea &&
+            IsBehindCarrier(context) &&
+            context.TouchType != DribbleTouchType.KnockOn)
+        {
+            // Inside the box a defender beaten for position recovers goal-side instead of lunging from behind.
+            return DefenderEngagementType.Recover;
+        }
+        if (context.IsInsideOwnPenaltyArea &&
             context.DecisionRoll >= PenaltyAreaChallengeChance(context))
         {
             return context.DistanceMeters <= 1.55f
@@ -181,6 +188,12 @@ public sealed class DefenderEngagementPlanner
         return context.DistanceMeters <= 1.55f
             ? DefenderEngagementType.Contain
             : DefenderEngagementType.Jockey;
+    }
+
+    private static bool IsBehindCarrier(DefenderEngagementContext context)
+    {
+        return Mathf.Abs(context.DefenderPosition.X - context.OwnGoal.X) >
+               Mathf.Abs(context.CarrierPosition.X - context.OwnGoal.X);
     }
 
     private static float PenaltyAreaChallengeChance(DefenderEngagementContext context)

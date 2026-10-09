@@ -14,6 +14,8 @@ public partial class FootballMatchSimulation : RefCounted
     public string last_error { get; set; } = "";
     public StringName last_possession_team_id { get; private set; } = new();
     public bool use_live_pitch_events { get; set; }
+    // The home side is the player's team in the game; balance batches can let the AI manage both sides.
+    public bool ai_substitutions_for_home { get; set; }
     public long MatchSeed { get; private set; }
 
     private readonly RandomNumberGenerator _rng = new();
@@ -58,7 +60,11 @@ public partial class FootballMatchSimulation : RefCounted
         last_possession_team_id = attacking.team.id;
 
         if (current_minute is 60 or 72 or 80)
+        {
             SimulateAiSubstitution(away, minuteEvents);
+            if (ai_substitutions_for_home)
+                SimulateAiSubstitution(home, minuteEvents);
+        }
 
         if (current_minute == 45)
         {
@@ -228,6 +234,31 @@ public partial class FootballMatchSimulation : RefCounted
                     attacking.team.id, shooterId);
                 break;
         }
+        Record(matchEvent);
+        return matchEvent;
+    }
+
+    // A ball that rolls over the goal line between the posts without a pending shot (rebound, deflection, own goal).
+    public FootballMatchEvent? register_live_loose_ball_goal(
+        StringName scoringTeamId,
+        StringName lastTouchPlayerId,
+        bool isOwnGoal)
+    {
+        if (!use_live_pitch_events || is_finished)
+            return null;
+        MatchTeamState? scoring = get_state(scoringTeamId);
+        if (scoring is null)
+            return null;
+        MatchTeamState conceding = scoring == home ? away : home;
+        IncrementStat(scoring, "goals");
+        FootballPlayer? toucher = (isOwnGoal ? conceding : scoring).team.get_player(lastTouchPlayerId);
+        string toucherName = toucher?.display_name ?? "Một cầu thủ";
+        var matchEvent = new FootballMatchEvent().setup(
+            current_minute, "goal",
+            isOwnGoal
+                ? $"VÀO! {toucherName} đưa bóng vào lưới nhà. Tỷ số là {score_text()}."
+                : $"VÀO! Bóng bật ra từ chân {toucherName} lăn qua vạch vôi. Tỷ số là {score_text()}.",
+            scoring.team.id, lastTouchPlayerId);
         Record(matchEvent);
         return matchEvent;
     }
@@ -439,14 +470,36 @@ public partial class FootballMatchSimulation : RefCounted
 
     private void SimulateAiSubstitution(MatchTeamState state, Array<FootballMatchEvent> minuteEvents)
     {
-        FootballPlayer? outgoing = state.get_starter_players().OrderBy(player => player.overall).FirstOrDefault();
-        FootballPlayer? incoming = state.get_substitute_players().OrderByDescending(player => player.overall).FirstOrDefault();
-        if (outgoing is null || incoming is null)
+        // The goalkeeper stays on, and an outfield player is replaced from the same line when possible.
+        FootballPlayer? outgoing = state.get_starter_players()
+            .Where(player => player.position != "GK")
+            .OrderBy(player => player.overall)
+            .FirstOrDefault();
+        if (outgoing is null)
+            return;
+        Array<FootballPlayer> substitutes = state.get_substitute_players();
+        FootballPlayer? incoming = substitutes
+            .Where(player => PositionLine(player.position) == PositionLine(outgoing.position))
+            .OrderByDescending(player => player.overall)
+            .FirstOrDefault() ??
+            substitutes
+                .Where(player => player.position != "GK")
+                .OrderByDescending(player => player.overall)
+                .FirstOrDefault();
+        if (incoming is null)
             return;
         FootballMatchEvent? matchEvent = make_substitution(state.team.id, outgoing.id, incoming.id);
         if (matchEvent is not null)
             minuteEvents.Add(matchEvent);
     }
+
+    private static int PositionLine(string position) => position switch
+    {
+        "GK" => 0,
+        "CB" or "LB" or "RB" => 1,
+        "DM" or "CM" or "AM" => 2,
+        _ => 3
+    };
 
     private void AddEvent(Array<FootballMatchEvent> minuteEvents, FootballMatchEvent matchEvent)
     {

@@ -46,6 +46,7 @@ public sealed partial class LiveMatchEngine
     private readonly FootballMovementController _movementController = new();
     private readonly MatchSideController _sideController = new();
     private readonly OffsideRule _offsideRule = new();
+    private readonly OffsideExposureLedger _offsideExposure = new();
     private readonly PassTrajectoryPlanner _passTrajectoryPlanner = new();
     private readonly PassExecutionResolver _passExecutionResolver = new();
     private readonly FirstTouchResolver _firstTouchResolver;
@@ -127,6 +128,9 @@ public sealed partial class LiveMatchEngine
     private double _simulationTimeSeconds;
     private double _fixedStepAccumulatorSeconds;
     private readonly List<LiveGoalRecord> _goalRecords = new();
+    private readonly List<LiveFoulRecord> _foulRecords = new();
+    private bool _lineupSyncPending;
+    public IReadOnlyList<LiveFoulRecord> FoulRecords => _foulRecords;
     private float _pendingShotDistanceMeters;
     private StringName _pendingShotSituation = new();
 
@@ -392,6 +396,9 @@ public sealed partial class LiveMatchEngine
         _movementController.Reset();
         _lastBallTouch.Reset();
         _shotDiagnostics.Reset();
+        _foulRecords.Clear();
+        _lineupSyncPending = false;
+        _offsideExposure.Clear();
         _sideController.Reset();
         _state.VisualTime = 0;
         _synchronizedGameSeconds = 0d;
@@ -535,7 +542,8 @@ public sealed partial class LiveMatchEngine
     {
         if (Simulation is null)
             return;
-        SyncLineups(false);
+        // Substitutions only take effect once the ball is dead; see ScheduleRestart.
+        _lineupSyncPending = true;
         bool hasHalfTime = false;
         bool hasFullTime = false;
         foreach (FootballMatchEvent matchEvent in newEvents)
@@ -669,7 +677,24 @@ public sealed partial class LiveMatchEngine
         if (!waitingForKickoff)
         {
             UpdatePlayerTargets();
-            _movementController.Advance(CurrentPositions, TargetPositions, _playerIntents, _playerPaces, delta);
+            HashSet<StringName> recoverySprinters = DefensiveUrgencyRules.SelectSprintingDefenders(
+                CurrentPositions,
+                TargetPositions,
+                _playerIntents,
+                _playerTeams,
+                _state.ActiveTeamId,
+                _state.IsLooseBallActive,
+                BallPosition,
+                OwnGoalX,
+                _configuration.DefensiveRecovery);
+            _movementController.Advance(
+                CurrentPositions,
+                TargetPositions,
+                _playerIntents,
+                _playerPaces,
+                delta,
+                recoverySprinters,
+                _configuration.DefensiveRecovery.RecoverySprintSpeedMetersPerSecond);
             EnforceGroundPlayerSeparation();
         }
         UpdateBall(delta);

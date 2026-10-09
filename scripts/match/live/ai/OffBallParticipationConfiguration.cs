@@ -12,7 +12,13 @@ public sealed class OffBallParticipationConfiguration
         int maximumForwardRunners,
         int maximumLooseBallChasers,
         float dangerousReceiverDistanceMeters,
-        float markerControlDistanceMeters)
+        float markerControlDistanceMeters,
+        float pressApproachDistanceMeters = 1.5f,
+        float shotLineBlockActivationDistanceMeters = 25f,
+        float shotLineBlockOffsetMeters = 5f,
+        float earlyRunProbability = 0f,
+        float earlyRunMaximumOvershootMeters = 0f,
+        float earlyRunWindowSeconds = 4f)
     {
         if (minimumAssignmentSeconds <= 0f)
         {
@@ -33,6 +39,12 @@ public sealed class OffBallParticipationConfiguration
         MaximumLooseBallChasers = maximumLooseBallChasers;
         DangerousReceiverDistanceMeters = dangerousReceiverDistanceMeters;
         MarkerControlDistanceMeters = markerControlDistanceMeters;
+        PressApproachDistanceMeters = pressApproachDistanceMeters;
+        ShotLineBlockActivationDistanceMeters = shotLineBlockActivationDistanceMeters;
+        ShotLineBlockOffsetMeters = shotLineBlockOffsetMeters;
+        EarlyRunProbability = earlyRunProbability;
+        EarlyRunMaximumOvershootMeters = earlyRunMaximumOvershootMeters;
+        EarlyRunWindowSeconds = earlyRunWindowSeconds;
     }
 
     public float MinimumAssignmentSeconds { get; }
@@ -45,6 +57,12 @@ public sealed class OffBallParticipationConfiguration
     public int MaximumLooseBallChasers { get; }
     public float DangerousReceiverDistanceMeters { get; }
     public float MarkerControlDistanceMeters { get; }
+    public float PressApproachDistanceMeters { get; }
+    public float ShotLineBlockActivationDistanceMeters { get; }
+    public float ShotLineBlockOffsetMeters { get; }
+    public float EarlyRunProbability { get; }
+    public float EarlyRunMaximumOvershootMeters { get; }
+    public float EarlyRunWindowSeconds { get; }
 
     public static OffBallParticipationConfiguration CreateM3Defaults()
     {
@@ -58,6 +76,12 @@ public sealed class OffBallParticipationConfiguration
             maximumForwardRunners: 4,
             maximumLooseBallChasers: 2,
             dangerousReceiverDistanceMeters: 24f,
-            markerControlDistanceMeters: 7.5f);
+            markerControlDistanceMeters: 7.5f,
+            pressApproachDistanceMeters: 1.5f,
+            shotLineBlockActivationDistanceMeters: 25f,
+            shotLineBlockOffsetMeters: 5f,
+            earlyRunProbability: 0.35f,
+            earlyRunMaximumOvershootMeters: 2.5f,
+            earlyRunWindowSeconds: 4f);
     }
 }

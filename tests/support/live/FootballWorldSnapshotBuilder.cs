@@ -11,6 +11,7 @@ public sealed class FootballWorldSnapshotBuilder
     private StringName _ballOwnerId = new();
     private StringName _possessionTeamId = new("home");
     private StringName _homeTeamId = new("home");
+    private float _gameTimeSeconds;
 
     public FootballWorldSnapshotBuilder AddPlayer(
         StringName playerId,
@@ -42,6 +43,12 @@ public sealed class FootballWorldSnapshotBuilder
         return this;
     }
 
+    public FootballWorldSnapshotBuilder AtTime(float gameTimeSeconds)
+    {
+        _gameTimeSeconds = gameTimeSeconds;
+        return this;
+    }
+
     public FootballWorldSnapshot Build()
     {
         return new FootballWorldSnapshot(
@@ -56,6 +63,12 @@ public sealed class FootballWorldSnapshotBuilder
             _possessionTeamId,
             _homeTeamId,
             false,
-            false);
+            false,
+            true,
+            false,
+            false,
+            null,
+            null,
+            _gameTimeSeconds);
     }
 }

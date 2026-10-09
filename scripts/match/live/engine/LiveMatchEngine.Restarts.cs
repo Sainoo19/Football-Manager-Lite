@@ -69,6 +69,11 @@ public sealed partial class LiveMatchEngine
         if (Simulation is null || playerId == new StringName() || !CurrentPositions.ContainsKey(playerId))
             return;
         ResetCarrySequence();
+        if (_playerTeams[playerId] != _offsideExposure.AttackingTeamId)
+        {
+            // Deliberate play by an opponent ends any offside exposure.
+            _offsideExposure.Clear();
+        }
         _state.IsBallVisible = true;
         _state.BallOwnerId = playerId;
         _lastBallTouch.Record(playerId, _playerTeams[playerId]);
@@ -95,7 +100,14 @@ public sealed partial class LiveMatchEngine
     {
         if (Simulation is null)
             return;
+        if (_lineupSyncPending)
+        {
+            // Players leave and enter only at a stoppage, before a restart taker is chosen.
+            _lineupSyncPending = false;
+            SyncLineups(false);
+        }
         ApplyPendingCardsAtStoppage();
+        _offsideExposure.Clear();
         ResetCarrySequence();
         ClearDirectAttack();
         _state.PossessionSequence.Reset();
@@ -247,7 +259,6 @@ public sealed partial class LiveMatchEngine
         Restarts++;
         RecordRestartTaken(_state.RestartType);
         SetTrackedPossession(_state.RestartTeamId);
-        SyncLineups(false);
         UpdateTeamPhases();
 
         string type = _state.RestartType.ToString();
@@ -281,6 +292,8 @@ public sealed partial class LiveMatchEngine
             float attackingGoalX = AttackingGoalX(_state.RestartTeamId);
             float crossTargetX = attackingGoalX < 0.5f ? 0.13f : 0.87f;
             StartBallAction(new Vector2(crossTargetX, 0.5f), 0.68f, 0.06f, receiver, BallActionKind.Cross);
+            // No offside from a corner kick.
+            _offsideExposure.Clear();
             SetAction($"{PlayerName(taker)} thực hiện phạt góc");
             return;
         }
@@ -531,11 +544,15 @@ public sealed partial class LiveMatchEngine
         if (playsShort)
         {
             StartPass(shortTarget, BallActionKind.Pass);
+            // No offside from a goal kick.
+            _offsideExposure.Clear();
+            _pendingOffsideReceiverId = new StringName();
             SetAction($"{PlayerName(goalkeeperId)} phát bóng ngắn cho {PlayerName(shortTarget)}");
             return;
         }
 
         StartClearance(goalkeeperId);
+        _offsideExposure.Clear();
         SetAction($"{PlayerName(goalkeeperId)} phát bóng dài lên phía trên");
     }
 

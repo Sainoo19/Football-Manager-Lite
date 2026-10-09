@@ -42,6 +42,31 @@ public static class DefensiveBlockTargeter
             targetLane));
     }
 
+    // The presser approaches from the goal side so the carrier cannot simply run past toward goal.
+    public static Vector2 PressApproachTarget(Vector2 ballPosition, Vector2 ownGoal, float distanceMeters)
+    {
+        return PointTowardGoal(ballPosition, ownGoal, distanceMeters);
+    }
+
+    // A second defender stands on the ball-goal line, between the presser and the goal.
+    public static Vector2 ShotLineBlockTarget(Vector2 ballPosition, Vector2 ownGoal, float offsetMeters)
+    {
+        float ballToGoalMeters = FootballPitchDimensions.DistanceMeters(ballPosition, ownGoal);
+        return PointTowardGoal(ballPosition, ownGoal, Mathf.Min(offsetMeters, ballToGoalMeters * 0.5f));
+    }
+
+    private static Vector2 PointTowardGoal(Vector2 ballPosition, Vector2 ownGoal, float distanceMeters)
+    {
+        Vector2 ballMeters = FootballPitchDimensions.ToMeters(ballPosition);
+        Vector2 towardGoal = FootballPitchDimensions.ToMeters(ownGoal) - ballMeters;
+        if (towardGoal.LengthSquared() <= 0.0001f)
+        {
+            return PlayerPitchBoundary.Clamp(ballPosition);
+        }
+        Vector2 targetMeters = ballMeters + towardGoal.Normalized() * Mathf.Min(distanceMeters, towardGoal.Length());
+        return PlayerPitchBoundary.Clamp(FootballPitchDimensions.ToNormalized(targetMeters));
+    }
+
     public static Vector2 CoverTarget(FootballWorldSnapshot world, StringName playerId, StringName teamId)
     {
         Vector2 shapeTarget = ShapeTarget(world, playerId, teamId);

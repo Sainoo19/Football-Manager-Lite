@@ -38,7 +38,9 @@ public sealed class FootballMovementController
         IReadOnlyDictionary<StringName, Vector2> targets,
         IReadOnlyDictionary<StringName, PlayerIntent> intents,
         IReadOnlyDictionary<StringName, int> paceRatings,
-        float delta)
+        float delta,
+        IReadOnlySet<StringName>? recoverySprinters = null,
+        float recoverySprintSpeedMetersPerSecond = 0f)
     {
         if (delta <= 0f)
         {
@@ -68,12 +70,14 @@ public sealed class FootballMovementController
                 ? intent.Kind
                 : PlayerIntentKind.HoldShape;
             int pace = paceRatings.TryGetValue(playerId, out int value) ? value : 50;
+            bool recoverySprint = recoverySprinters?.Contains(playerId) == true;
             positions[playerId] = AdvancePlayer(
                 positions[playerId],
                 target,
                 _velocitiesMetersPerSecond[playerId],
                 intentKind,
                 pace,
+                recoverySprint ? recoverySprintSpeedMetersPerSecond : 0f,
                 delta,
                 playerId,
                 out Vector2 updatedVelocity);
@@ -88,6 +92,7 @@ public sealed class FootballMovementController
         Vector2 currentVelocity,
         PlayerIntentKind intentKind,
         int paceRating,
+        float recoverySprintSpeedMetersPerSecond,
         float delta,
         StringName playerId,
         out Vector2 updatedVelocity)
@@ -102,10 +107,11 @@ public sealed class FootballMovementController
             return PlayerPitchBoundary.Clamp(normalizedTarget);
         }
 
-        float acceleration = IsSprintIntent(intentKind)
+        bool recoverySprint = recoverySprintSpeedMetersPerSecond > 0f;
+        float acceleration = recoverySprint || IsSprintIntent(intentKind)
             ? SprintAccelerationMetersPerSecondSquared
             : NormalAccelerationMetersPerSecondSquared;
-        float maximumSpeed = MaximumSpeed(intentKind, paceRating);
+        float maximumSpeed = MaximumSpeed(intentKind, paceRating, recoverySprintSpeedMetersPerSecond);
         float brakingSpeed = Mathf.Sqrt(2f * acceleration * distance);
         float desiredSpeed = Mathf.Min(maximumSpeed, brakingSpeed);
         if (distance < ArrivalRadiusMeters)
@@ -129,7 +135,10 @@ public sealed class FootballMovementController
             FootballPitchDimensions.ToNormalized(positionMeters + step));
     }
 
-    private static float MaximumSpeed(PlayerIntentKind intentKind, int paceRating)
+    private static float MaximumSpeed(
+        PlayerIntentKind intentKind,
+        int paceRating,
+        float recoverySprintSpeedMetersPerSecond)
     {
         float baseSpeed = intentKind switch
         {
@@ -156,9 +165,11 @@ public sealed class FootballMovementController
             PlayerIntentKind.ChaseLooseBall => 8.2f,
             PlayerIntentKind.ContestAerialBall => 7.8f,
             PlayerIntentKind.ClaimAerialBall => 7.2f,
+            PlayerIntentKind.RecoverGoalSide => 6.4f,
             PlayerIntentKind.RepositionForRestart => 6.0f,
             _ => 5f
         };
+        baseSpeed = Mathf.Max(baseSpeed, recoverySprintSpeedMetersPerSecond);
         float paceFactor = Mathf.Lerp(0.82f, 1.10f, Mathf.Clamp(paceRating, 1, 99) / 99f);
         return baseSpeed * paceFactor;
     }

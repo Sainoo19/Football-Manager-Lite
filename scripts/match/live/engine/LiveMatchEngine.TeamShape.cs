@@ -36,16 +36,33 @@ public sealed partial class LiveMatchEngine
         PlanPlayerIntents(false);
         foreach ((StringName playerId, PlayerIntent intent) in _playerIntents)
         {
-            TargetPositions[playerId] = intent.Kind switch
-            {
-                PlayerIntentKind.PressBall or PlayerIntentKind.ChaseLooseBall => BallPosition,
-                PlayerIntentKind.ReceivePass when _ballActionActive => _ballActionTo,
-                _ => intent.Target
-            };
+            TargetPositions[playerId] = LiveIntentTarget(playerId, intent);
         }
         ApplyShotGoalkeeperResponse();
         ApplyGroundDuelTargets();
         ApplyAerialContestTargets();
+    }
+
+    private Vector2 LiveIntentTarget(StringName playerId, PlayerIntent intent)
+    {
+        OffBallParticipationConfiguration offBall = _configuration.OffBallParticipation;
+        if (intent.Assignment == OffBallAssignmentKind.BlockShotLine)
+        {
+            return DefensiveBlockTargeter.ShotLineBlockTarget(
+                BallPosition,
+                new Vector2(OwnGoalX(_playerTeams[playerId]), 0.5f),
+                offBall.ShotLineBlockOffsetMeters);
+        }
+        return intent.Kind switch
+        {
+            PlayerIntentKind.PressBall => DefensiveBlockTargeter.PressApproachTarget(
+                BallPosition,
+                new Vector2(OwnGoalX(_playerTeams[playerId]), 0.5f),
+                offBall.PressApproachDistanceMeters),
+            PlayerIntentKind.ChaseLooseBall => BallPosition,
+            PlayerIntentKind.ReceivePass when _ballActionActive => _ballActionTo,
+            _ => intent.Target
+        };
     }
 
     private void PlanPlayerIntents(bool force)

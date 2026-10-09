@@ -16,6 +16,7 @@ public enum OffBallAssignmentKind
     RecyclePossession,
     ProtectAgainstCounter,
     PressBall,
+    BlockShotLine,
     CoverPresser,
     BlockPrimaryLane,
     TrackRunner,

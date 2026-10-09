@@ -71,7 +71,9 @@ public sealed partial class LiveMatchEngine
                 sequence.IsBackToGoal,
                 HasCoverFor(nearestDefenderId),
                 DecisionRoll(nearestDefenderId, carrierId, _decisionSerial + 601),
-                IsInsideOwnPenaltyArea(CurrentPositions[nearestDefenderId], _playerTeams[nearestDefenderId]),
+                // A foul is a penalty when the ball is in the box, so either player being inside counts.
+                IsInsideOwnPenaltyArea(CurrentPositions[nearestDefenderId], _playerTeams[nearestDefenderId]) ||
+                IsInsideOwnPenaltyArea(CurrentPositions[carrierId], _playerTeams[nearestDefenderId]),
                 _configuration.PenaltyAreaChallengeProbability,
                 Simulation?.get_state(_playerTeams[nearestDefenderId])?.YellowCardCount(nearestDefenderId) > 0,
                 _configuration.BookedPlayerChallengeProbability,
@@ -232,7 +234,7 @@ public sealed partial class LiveMatchEngine
         {
             case GroundDuelOutcome.Foul:
                 sequence.Reset();
-                ResolveLiveFoul(defenderId, carrierId, distanceMeters);
+                ResolveLiveFoul(defenderId, carrierId, distanceMeters, engagement.Type, challengeFromBehind);
                 return;
             case GroundDuelOutcome.DefenderWins:
                 CompleteDefenderWin(carrierId, defenderId, defenderIsGoalkeeper);
@@ -266,6 +268,7 @@ public sealed partial class LiveMatchEngine
         _carryOwnerId = new StringName();
         _consecutiveCarries = 0;
         _state.BallOwnerId = defenderId;
+        _offsideExposure.Clear();
         _lastBallTouch.Record(defenderId, _playerTeams[defenderId]);
         SetTrackedPossession(_playerTeams[defenderId]);
         _state.PossessionSequence.ObserveOwner(
@@ -313,10 +316,12 @@ public sealed partial class LiveMatchEngine
         {
             Vector2 carrierMeters = FootballPitchDimensions.ToMeters(CurrentPositions[carrierId]);
             Vector2 defenderMeters = FootballPitchDimensions.ToMeters(CurrentPositions[defenderId]);
-            Vector2 awayFromDefender = carrierMeters - defenderMeters;
-            if (awayFromDefender.LengthSquared() > 0.01f)
+            Vector2 contestAxis = defenderMeters - carrierMeters;
+            if (contestAxis.LengthSquared() > 0.01f)
             {
-                direction = (awayFromDefender.Normalized() + direction * 0.35f).Normalized();
+                // The ball squirts sideways out of the contest: neither player keeps an automatic head start.
+                float side = DecisionRoll(defenderId, carrierId, _decisionSerial + 683) < 0.5f ? -1f : 1f;
+                direction = contestAxis.Normalized().Orthogonal() * side;
             }
         }
 

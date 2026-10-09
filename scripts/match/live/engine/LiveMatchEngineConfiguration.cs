@@ -27,7 +27,8 @@ public sealed class LiveMatchEngineConfiguration
         float bookedPlayerChallengeProbability,
         FootballActionSelectionConfiguration actionSelection,
         TeamPhaseConfiguration teamPhases,
-        OffBallParticipationConfiguration offBallParticipation)
+        OffBallParticipationConfiguration offBallParticipation,
+        DefensiveRecoveryConfiguration? defensiveRecovery = null)
     {
         if (fixedStepSeconds <= 0d)
         {
@@ -65,6 +66,7 @@ public sealed class LiveMatchEngineConfiguration
         TeamPhases = teamPhases ?? throw new ArgumentNullException(nameof(teamPhases));
         OffBallParticipation = offBallParticipation ??
             throw new ArgumentNullException(nameof(offBallParticipation));
+        DefensiveRecovery = defensiveRecovery ?? DefensiveRecoveryConfiguration.CreatePhase1Defaults();
     }
 
     public double FixedStepSeconds { get; }
@@ -92,6 +94,7 @@ public sealed class LiveMatchEngineConfiguration
     public FootballActionSelectionConfiguration ActionSelection { get; }
     public TeamPhaseConfiguration TeamPhases { get; }
     public OffBallParticipationConfiguration OffBallParticipation { get; }
+    public DefensiveRecoveryConfiguration DefensiveRecovery { get; }
 
     public static LiveMatchEngineConfiguration CreateFootballFundamentalsV1()
     {
@@ -113,13 +116,14 @@ public sealed class LiveMatchEngineConfiguration
             minimumThroughBallCreativeSkill: 150,
             headerShotProbability: 0.38f,
             defensiveHeaderOutOfPlayProbability: 0.48f,
-            minimumOffsideAvoidanceProbability: 0.72f,
-            maximumOffsideAvoidanceProbability: 0.96f,
+            minimumOffsideAvoidanceProbability: 0.50f,
+            maximumOffsideAvoidanceProbability: 0.85f,
             penaltyAreaChallengeProbability: 0.04f,
             maximumDirectAttackActions: 3,
             bookedPlayerChallengeProbability: 0.25f,
             actionSelection: FootballActionSelectionConfiguration.CreateM1Defaults(),
             teamPhases: TeamPhaseConfiguration.CreateM2Defaults(),
-            offBallParticipation: OffBallParticipationConfiguration.CreateM3Defaults());
+            offBallParticipation: OffBallParticipationConfiguration.CreateM3Defaults(),
+            defensiveRecovery: DefensiveRecoveryConfiguration.CreatePhase1Defaults());
     }
 }

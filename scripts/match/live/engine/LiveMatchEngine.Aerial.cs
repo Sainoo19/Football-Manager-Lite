@@ -47,7 +47,8 @@ public sealed partial class LiveMatchEngine
         }
         _aerialContenderIds.Clear();
 
-        if (resolution.HasWinner && resolution.WinnerId == _pendingOffsideReceiverId)
+        if (resolution.HasWinner &&
+            (resolution.WinnerId == _pendingOffsideReceiverId || _offsideExposure.IsExposed(resolution.WinnerId)))
         {
             ResolveOffside(resolution.WinnerId);
             return;

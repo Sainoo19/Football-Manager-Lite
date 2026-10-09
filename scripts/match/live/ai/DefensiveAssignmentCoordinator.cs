@@ -23,7 +23,10 @@ public sealed class DefensiveAssignmentCoordinator
         {
             intents[presser] = Intent(
                 PlayerIntentKind.PressBall,
-                world.BallPosition,
+                DefensiveBlockTargeter.PressApproachTarget(
+                    world.BallPosition,
+                    world.OwnGoal(teamId),
+                    _configuration.PressApproachDistanceMeters),
                 phase,
                 world.BallOwnerId,
                 OffBallAssignmentKind.PressBall);
@@ -32,8 +35,10 @@ public sealed class DefensiveAssignmentCoordinator
 
         AssignThreats(world, teamId, phase, available, intents);
 
-        StringName cover = SelectClosest(world, available,
-            world.BallPosition.Lerp(world.OwnGoal(teamId), 0.30f));
+        bool blocksShotLine = AssignShotLineBlocker(world, teamId, phase, available, intents);
+        StringName cover = blocksShotLine
+            ? new StringName()
+            : SelectClosest(world, available, world.BallPosition.Lerp(world.OwnGoal(teamId), 0.30f));
         if (cover != new StringName())
         {
             intents[cover] = Intent(
@@ -87,6 +92,42 @@ public sealed class DefensiveAssignmentCoordinator
             }
         }
         return selected;
+    }
+
+    // Near goal the cover player stops covering the presser and blocks the carrier's line to goal instead.
+    private bool AssignShotLineBlocker(
+        FootballWorldSnapshot world,
+        StringName teamId,
+        LiveTeamPhase phase,
+        List<StringName> available,
+        Dictionary<StringName, PlayerIntent> intents)
+    {
+        Vector2 ownGoal = world.OwnGoal(teamId);
+        if (!world.PlayerTeams.TryGetValue(world.BallOwnerId, out StringName? ownerTeamId) ||
+            ownerTeamId == teamId ||
+            FootballPitchDimensions.DistanceMeters(world.BallPosition, ownGoal) >
+            _configuration.ShotLineBlockActivationDistanceMeters)
+        {
+            return false;
+        }
+
+        Vector2 target = DefensiveBlockTargeter.ShotLineBlockTarget(
+            world.BallPosition,
+            ownGoal,
+            _configuration.ShotLineBlockOffsetMeters);
+        StringName blocker = SelectClosestDefender(world, available, target);
+        if (blocker == new StringName())
+        {
+            return false;
+        }
+        intents[blocker] = Intent(
+            PlayerIntentKind.CoverPress,
+            target,
+            phase,
+            world.BallOwnerId,
+            OffBallAssignmentKind.BlockShotLine);
+        available.Remove(blocker);
+        return true;
     }
 
     private static StringName SelectLaneBlocker(

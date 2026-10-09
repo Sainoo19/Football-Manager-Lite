@@ -12,6 +12,7 @@ public partial class DotNetTestRunner : Node
             if (OS.GetCmdlineUserArgs().Contains("--suite=core-behaviour"))
             {
                 CoreBehaviourTests.Run();
+                Phase1RulesTests.Run();
                 GroundDuelTests.Run();
                 M2PhaseIntegrationTests.Run();
                 OffBallRoleAllocatorTests.Run();
@@ -66,6 +67,7 @@ public partial class DotNetTestRunner : Node
             FootballFundamentalsRegressionTests.Run();
             MatchRefinementTests.Run();
             CoreBehaviourTests.Run();
+            Phase1RulesTests.Run();
             MatchFlowRegressionTests.Run();
             FootballFundamentalsIntegrationTests.Run();
             M1ProductionPipelineIntegrationTests.Run();

@@ -54,6 +54,12 @@ public sealed partial class LiveMatchEngine
             return;
         }
         _state.IsLooseBallActive = false;
+        if (_offsideExposure.IsExposed(winnerId))
+        {
+            // Collecting a rebound from an offside position (for example after a save) is an offence.
+            ResolveOffside(winnerId);
+            return;
+        }
         LooseBallRecoveries++;
         GivePossessionTo(winnerId, 0.26f);
         SetAction($"{PlayerName(winnerId)} giành được bóng hai");
@@ -146,6 +152,11 @@ public sealed partial class LiveMatchEngine
         StringName defendingGoalTeamId = OwnGoalX(Simulation.home.team.id) < 0.5f == leftGoalLine
             ? Simulation.home.team.id
             : Simulation.away.team.id;
+        if (GoalLineRule.CrossesBetweenPosts(BallPosition, outPosition, leftGoalLine ? 0f : 1f))
+        {
+            ResolveLooseBallGoal(defendingGoalTeamId, lastTouchTeamId);
+            return;
+        }
         Vector2 goalLinePosition = new(
             leftGoalLine ? 0.018f : 0.982f,
             Mathf.Clamp(outPosition.Y, 0.035f, 0.965f));
@@ -162,5 +173,31 @@ public sealed partial class LiveMatchEngine
             ScheduleRestart("goal_kick", defendingGoalTeamId, GoalKickPosition(defendingGoalTeamId));
             SetAction("Bóng lăn hết biên ngang — phát bóng lên");
         }
+    }
+
+    private void ResolveLooseBallGoal(StringName defendingGoalTeamId, StringName lastTouchTeamId)
+    {
+        if (Simulation is null)
+        {
+            return;
+        }
+
+        StringName scoringTeamId = defendingGoalTeamId == Simulation.home.team.id
+            ? Simulation.away.team.id
+            : Simulation.home.team.id;
+        bool isOwnGoal = lastTouchTeamId == defendingGoalTeamId;
+        StringName toucherId = _lastBallTouch.PlayerId;
+        _state.IsLooseBallActive = false;
+        _state.LooseBallVelocityMetersPerSecond = Vector2.Zero;
+        FootballMatchEvent? matchEvent = Simulation.register_live_loose_ball_goal(scoringTeamId, toucherId, isOwnGoal);
+        if (matchEvent is not null)
+        {
+            LiveMatchEvent?.Invoke(matchEvent);
+        }
+        RecordGoal(0f, isOwnGoal ? "own_goal" : "loose_ball");
+        ScheduleRestart("kickoff", defendingGoalTeamId, new Vector2(0.5f, 0.5f));
+        SetAction(isOwnGoal
+            ? $"BÀN THẮNG — {PlayerName(toucherId)} phản lưới nhà"
+            : $"BÀN THẮNG — bóng lăn qua vạch vôi sau pha chạm của {PlayerName(toucherId)}");
     }
 }
