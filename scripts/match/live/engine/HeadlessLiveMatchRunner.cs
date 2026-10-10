@@ -45,7 +45,8 @@ public sealed class HeadlessLiveMatchRunner
         FootballMatchSimulation simulation,
         MatchPlaybackSpeed speed = MatchPlaybackSpeed.Fastest,
         double realStepSeconds = 0.05d,
-        Action<LiveMatchEngine>? observe = null)
+        Action<LiveMatchEngine>? observe = null,
+        Action<LiveMatchEngine>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(simulation);
         if (simulation.home is null || simulation.away is null)
@@ -67,6 +68,7 @@ public sealed class HeadlessLiveMatchRunner
         LiveMatchEngine engine = new();
         engine.AttachRuntime(runtime);
         engine.SetMatch(simulation);
+        configure?.Invoke(engine);
         runtime.Start();
         engine.Execute(new LiveMatchCommand(LiveMatchCommandKind.Play));
 

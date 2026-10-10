@@ -294,6 +294,7 @@ public sealed partial class LiveMatchEngine
             StartBallAction(new Vector2(crossTargetX, 0.5f), 0.68f, 0.06f, receiver, BallActionKind.Cross);
             // No offside from a corner kick.
             _offsideExposure.Clear();
+            _releaseExemptFromOffside = true;
             SetAction($"{PlayerName(taker)} thực hiện phạt góc");
             return;
         }
@@ -547,12 +548,14 @@ public sealed partial class LiveMatchEngine
             // No offside from a goal kick.
             _offsideExposure.Clear();
             _pendingOffsideReceiverId = new StringName();
+            _releaseExemptFromOffside = true;
             SetAction($"{PlayerName(goalkeeperId)} phát bóng ngắn cho {PlayerName(shortTarget)}");
             return;
         }
 
         StartClearance(goalkeeperId);
         _offsideExposure.Clear();
+        _releaseExemptFromOffside = true;
         SetAction($"{PlayerName(goalkeeperId)} phát bóng dài lên phía trên");
     }
 

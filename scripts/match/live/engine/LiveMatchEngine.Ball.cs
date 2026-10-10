@@ -247,6 +247,7 @@ public sealed partial class LiveMatchEngine
         _actionSourceId = _state.BallOwnerId;
         _actionSourceTeamId = _actionSourceId != new StringName() && _playerTeams.ContainsKey(_actionSourceId) ? _playerTeams[_actionSourceId] : _state.ActiveTeamId;
         _lastBallTouch.Record(_actionSourceId, _actionSourceTeamId);
+        _releaseExemptFromOffside = kind == BallActionKind.ThrowIn;
         if (kind == BallActionKind.ThrowIn)
         {
             _offsideExposure.Clear();
@@ -485,6 +486,11 @@ public sealed partial class LiveMatchEngine
     {
         if (Simulation is null)
             return;
+        if (_releaseExemptFromOffside)
+        {
+            // Diagnostic only: an offside given straight from a throw-in, corner or goal kick breaks the Laws.
+            OffsidesFromExemptRestarts++;
+        }
         StringName attackingTeamId = _playerTeams.GetValueOrDefault(receiverId, _actionSourceTeamId);
         StringName defendingTeamId = attackingTeamId == Simulation.home.team.id
             ? Simulation.away.team.id

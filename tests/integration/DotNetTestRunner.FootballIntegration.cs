@@ -13,6 +13,7 @@ public partial class DotNetTestRunner : Node
             {
                 CoreBehaviourTests.Run();
                 Phase1RulesTests.Run();
+                Phase1GateTests.Run();
                 GroundDuelTests.Run();
                 M2PhaseIntegrationTests.Run();
                 OffBallRoleAllocatorTests.Run();
@@ -68,6 +69,7 @@ public partial class DotNetTestRunner : Node
             MatchRefinementTests.Run();
             CoreBehaviourTests.Run();
             Phase1RulesTests.Run();
+            Phase1GateTests.Run();
             MatchFlowRegressionTests.Run();
             FootballFundamentalsIntegrationTests.Run();
             M1ProductionPipelineIntegrationTests.Run();

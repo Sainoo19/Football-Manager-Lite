@@ -2,7 +2,7 @@ using System;
 
 public sealed class BalanceMetricRange
 {
-    public BalanceMetricRange(string key, string displayName, double minimum, double maximum)
+    public BalanceMetricRange(string key, string displayName, double minimum, double maximum, string gate = "")
     {
         if (string.IsNullOrWhiteSpace(key))
         {
@@ -17,12 +17,15 @@ public sealed class BalanceMetricRange
         DisplayName = displayName;
         Minimum = minimum;
         Maximum = maximum;
+        Gate = gate;
     }
 
     public string Key { get; }
     public string DisplayName { get; }
     public double Minimum { get; }
     public double Maximum { get; }
+    // Phase gate this range belongs to ("C" role duties, "D" plausibility); empty for ungated ranges.
+    public string Gate { get; }
 
     public bool Contains(double value)
     {

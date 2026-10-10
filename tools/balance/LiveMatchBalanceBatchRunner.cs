@@ -22,7 +22,11 @@ public partial class LiveMatchBalanceBatchRunner : Node
         {
             IReadOnlyDictionary<string, string> arguments = ParseArguments(OS.GetCmdlineUserArgs());
             LiveMatchBalanceConfiguration configuration =
-                LiveMatchBalanceConfiguration.CreateFootballFundamentalsV1();
+                arguments.GetValueOrDefault("profile", "fundamentals") == "phase1"
+                    ? LiveMatchBalanceConfiguration.CreatePhase1()
+                    : LiveMatchBalanceConfiguration.CreateFootballFundamentalsV1();
+            bool invariantsEnabled = arguments.GetValueOrDefault("invariants", "false") == "true";
+            List<object> invariantRecords = new();
             int matchCount = ParsePositiveInt(arguments, "matches", configuration.BatchMatchCount);
             int determinismAuditCount = ParseNonNegativeInt(
                 arguments,
@@ -57,6 +61,7 @@ public partial class LiveMatchBalanceBatchRunner : Node
             {
                 long seed = firstSeed + index;
                 (FootballTeam home, FootballTeam away) = SelectTeams(teams, startIndex + index);
+                EngineInvariantChecker? invariantChecker = invariantsEnabled ? new EngineInvariantChecker() : null;
                 try
                 {
                     MatchFlowDiagnostics flow = new();
@@ -66,7 +71,9 @@ public partial class LiveMatchBalanceBatchRunner : Node
                         simulation,
                         MatchPlaybackSpeed.Fastest,
                         realStepSeconds: flowDiagnosticsEnabled ? 0.0005d : 0.05d,
-                        observe: flowDiagnosticsEnabled ? engine => flow.Observe(engine) : null);
+                        observe: flowDiagnosticsEnabled ? engine => flow.Observe(engine) : null,
+                        configure: invariantChecker is null ? null : invariantChecker.Attach);
+
                     // Records are copied only at the end, outside the simulation loop.
                     if (flowDiagnosticsEnabled)
                     {
@@ -78,7 +85,7 @@ public partial class LiveMatchBalanceBatchRunner : Node
                                 $"Bóng dừng={flow.MaximumStationaryLooseBallSeconds:0.0}s; restart={flow.MaximumRestartWaitSeconds:0.0}s; giữ bóng={flow.MaximumOwnerHoldSeconds:0.0}s.", seed);
                         }
                     }
-                    LiveMatchBalanceRecord record = analyzer.CreateRecord(index + 1, result);
+                    LiveMatchBalanceRecord record = analyzer.CreateRecord(startIndex + index + 1, result);
                     analyzer.ValidateMatch(result, record, journal);
                     records.Add(record);
                 }
@@ -90,6 +97,20 @@ public partial class LiveMatchBalanceBatchRunner : Node
                         "BATCH_MATCH_EXCEPTION",
                         $"Trận batch phát sinh exception: {exception.GetType().Name}: {exception.Message}",
                         seed);
+                }
+
+                if (invariantChecker is not null)
+                {
+                    // Recorded outside the try block so violations seen before a crash are kept.
+                    foreach (EngineInvariantViolation violation in invariantChecker.Violations)
+                    {
+                        invariantRecords.Add(new { seed, violation });
+                        journal.AddCodeBug(
+                            BalanceIssueSeverity.Error,
+                            $"INVARIANT_{violation.Code}",
+                            $"{violation.FirstDetail} (lần đầu ở giây {violation.FirstGameSeconds:0.0}; {violation.Count} bước)",
+                            seed);
+                    }
                 }
 
                 if ((index + 1) % 5 == 0 || index + 1 == matchCount)
@@ -106,6 +127,11 @@ public partial class LiveMatchBalanceBatchRunner : Node
                 configuration,
                 journal);
             new BalanceReportWriter().Write(outputDirectory, configuration, summary, records, journal);
+            if (invariantsEnabled)
+            {
+                File.WriteAllText(Path.Combine(outputDirectory, "invariant-violations.json"),
+                    JsonSerializer.Serialize(invariantRecords, new JsonSerializerOptions { WriteIndented = true }));
+            }
             if (flowDiagnosticsEnabled)
             {
                 File.WriteAllText(Path.Combine(outputDirectory, "flow-diagnostics.json"),

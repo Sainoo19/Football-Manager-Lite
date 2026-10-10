@@ -59,7 +59,10 @@ public sealed class LiveMatchBalanceAnalyzer
             analytics.ActionMetrics,
             analytics.TeamPhaseMetrics,
             analytics.OffBallMetrics,
-            goalRecords);
+            goalRecords)
+        {
+            Duty = Phase1DutyMetrics.FromShots(result.Shots)
+        };
     }
 
     public void ValidateMatch(
@@ -266,7 +269,7 @@ public sealed class LiveMatchBalanceAnalyzer
                 journal.AddFootballLogic(
                     BalanceIssueSeverity.Warning,
                     "BALANCE_RANGE_MISS",
-                    $"{range.DisplayName} nằm ngoài khoảng cân bằng Football Fundamentals v1.",
+                    $"{range.DisplayName} nằm ngoài khoảng cân bằng {configuration.ProfileName}.",
                     metricKey: range.Key,
                     observedValue: average,
                     expectedValue: $"{range.Minimum:0.###}–{range.Maximum:0.###}");

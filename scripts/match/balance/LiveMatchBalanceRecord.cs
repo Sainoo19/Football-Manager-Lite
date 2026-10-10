@@ -116,6 +116,7 @@ public sealed class LiveMatchBalanceRecord
     public TeamPhaseMetricsSnapshot TeamPhaseMetrics { get; }
     public OffBallMetricsSnapshot OffBallMetrics { get; }
     public IReadOnlyList<BalanceGoalRecord> GoalRecords { get; }
+    public Phase1DutyMetrics Duty { get; init; } = Phase1DutyMetrics.Empty;
     public double ShotConversion => Shots == 0 ? 0d : (double)Goals / Shots;
     public double PassCompletion => PassAttempts == 0 ? 0d : (double)CompletedPasses / PassAttempts;
 
@@ -178,6 +179,9 @@ public sealed class LiveMatchBalanceRecord
         metrics["box_near_post_occupations"] = OffBallMetrics.NearPostOccupations;
         metrics["box_far_post_occupations"] = OffBallMetrics.FarPostOccupations;
         metrics["box_cutback_occupations"] = OffBallMetrics.CutBackOccupations;
+        metrics["free_box_shots"] = Duty.FreeBoxShots;
+        metrics["team_recovery_rate"] = Duty.TeamRecoveryRate;
+        metrics["goalkeeper_in_box_rate"] = Duty.GoalkeeperInBoxRate;
         return metrics;
     }
 }

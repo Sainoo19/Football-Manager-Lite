@@ -108,7 +108,8 @@ public sealed class BalanceReportWriter
             "emergency_defence_entries,team_width_meters,team_length_meters,team_compactness_meters," +
             "same_target_collisions,passing_options,runner_lane_diversity,off_ball_rest_defence_players," +
             "unmarked_dangerous_receivers,box_near_post_occupations,box_far_post_occupations," +
-            "box_cutback_occupations,event_sequence_signature," +
+            "box_cutback_occupations,free_box_shots,team_recovery_rate,goalkeeper_in_box_rate," +
+            "event_sequence_signature," +
             "final_snapshot_signature");
         foreach (LiveMatchBalanceRecord record in records)
         {
@@ -166,6 +167,9 @@ public sealed class BalanceReportWriter
                 .Append(record.OffBallMetrics.NearPostOccupations).Append(',')
                 .Append(record.OffBallMetrics.FarPostOccupations).Append(',')
                 .Append(record.OffBallMetrics.CutBackOccupations).Append(',')
+                .Append(record.Duty.FreeBoxShots).Append(',')
+                .Append(Format(record.Duty.TeamRecoveryRate)).Append(',')
+                .Append(Format(record.Duty.GoalkeeperInBoxRate)).Append(',')
                 .Append(record.EventSequenceSignature).Append(',')
                 .Append(record.FinalSnapshotSignature)
                 .AppendLine();
@@ -232,7 +236,12 @@ public sealed class BalanceReportWriter
                         $"({summary.UniqueEventSequenceRatio:P1})")
             .AppendLine($"- Code bug: {journal.Issues.Count(issue => issue.Category == BalanceIssueCategory.CodeBug)}")
             .AppendLine($"- Football logic: {journal.Issues.Count(issue => issue.Category == BalanceIssueCategory.FootballLogic)}")
-            .AppendLine()
+            .AppendLine();
+        if (configuration.IsPhase1)
+        {
+            AppendPhase1Gates(report, configuration, summary, journal);
+        }
+        report
             .AppendLine("## Aggregate metrics")
             .AppendLine()
             .AppendLine("| Metric | Trung bình | Khoảng mong đợi | Kết quả |")
@@ -380,6 +389,49 @@ public sealed class BalanceReportWriter
         }
         File.WriteAllText(Path.Combine(outputDirectory, "report.md"), report.ToString(), Encoding.UTF8);
     }
+
+    // The four gates of plan/phase1-definition-of-done.md, as far as a batch can decide them.
+    private static void AppendPhase1Gates(
+        StringBuilder report,
+        LiveMatchBalanceConfiguration configuration,
+        LiveMatchBatchSummary summary,
+        BalanceIssueJournal journal)
+    {
+        List<BalanceIssue> codeBugs = journal.Issues
+            .Where(issue => issue.Category == BalanceIssueCategory.CodeBug)
+            .ToList();
+        int invariantViolations = codeBugs.Count(issue => issue.Code.StartsWith("INVARIANT_", StringComparison.Ordinal));
+        int lawViolations = codeBugs.Count(issue => issue.Code.StartsWith("INVARIANT_I8", StringComparison.Ordinal));
+        bool complete = summary.CompletedMatchCount == summary.RequestedMatchCount;
+        bool gateA = complete && codeBugs.Count == 0;
+        report.AppendLine("## Cổng Phase 1")
+            .AppendLine()
+            .AppendLine("| Cổng | Kết quả | Chi tiết |")
+            .AppendLine("|---|:---:|---|")
+            .AppendLine($"| A — Ổn định | {Verdict(gateA)} | {summary.CompletedMatchCount}/{summary.RequestedMatchCount} trận; " +
+                        $"{codeBugs.Count} mục lỗi code, trong đó {invariantViolations} mục vi phạm bất biến (tính theo trận). " +
+                        "Bộ test đầy đủ chạy riêng. |")
+            .AppendLine($"| B — Luật | {Verdict(lawViolations == 0)} | {lawViolations} mục vi phạm luật đo được trên batch (I8). " +
+                        "Test theo từng điều luật chạy riêng. |");
+        foreach (string gate in new[] { "C", "D" })
+        {
+            List<BalanceMetricRange> ranges = configuration.MetricRanges.Values
+                .Where(range => range.Gate == gate)
+                .ToList();
+            List<string> misses = ranges
+                .Where(range => !range.Contains(summary.MetricAverages.GetValueOrDefault(range.Key)))
+                .Select(range => $"{range.DisplayName} = {Format(summary.MetricAverages.GetValueOrDefault(range.Key))}")
+                .ToList();
+            string name = gate == "C" ? "C — Nhiệm vụ" : "D — Giống bóng đá phủi";
+            string detail = misses.Count == 0
+                ? $"{ranges.Count}/{ranges.Count} chỉ số trong ngưỡng"
+                : $"{ranges.Count - misses.Count}/{ranges.Count} trong ngưỡng; ngoài ngưỡng: {string.Join("; ", misses)}";
+            report.AppendLine($"| {name} | {Verdict(misses.Count == 0)} | {detail} |");
+        }
+        report.AppendLine();
+    }
+
+    private static string Verdict(bool passed) => passed ? "ĐẠT" : "CHƯA ĐẠT";
 
     private static string Format(double value)
     {

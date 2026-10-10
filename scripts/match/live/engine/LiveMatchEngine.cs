@@ -399,6 +399,8 @@ public sealed partial class LiveMatchEngine
         _foulRecords.Clear();
         _lineupSyncPending = false;
         _offsideExposure.Clear();
+        _releaseExemptFromOffside = false;
+        OffsidesFromExemptRestarts = 0;
         _sideController.Reset();
         _state.VisualTime = 0;
         _synchronizedGameSeconds = 0d;
@@ -704,5 +706,6 @@ public sealed partial class LiveMatchEngine
             ResolveLooseBall();
         if (IsPlaying && !_ballActionActive && _state.BallOwnerId != new StringName() && _state.VisualTime >= _nextDecisionTime)
             DecideNextAction();
+        SimulationStepCompleted?.Invoke();
     }
 }
