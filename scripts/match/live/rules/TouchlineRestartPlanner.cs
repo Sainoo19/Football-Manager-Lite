@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 
 public sealed class TouchlineRestartPlanner
@@ -8,6 +9,8 @@ public sealed class TouchlineRestartPlanner
     public const float CornerDefenderDistanceMeters = 9.15f;
     public const float MinimumThrowDistanceMeters = 3f;
     public const float MaximumThrowDistanceMeters = 24f;
+    // Two players cannot stand closer than the body separation, so restart positions must not overlap either.
+    public const float RestartPositionSpacingMeters = PlayerCollisionResolver.MinimumSeparationMeters + 0.3f;
 
     public Vector2 PlaceCorner(Vector2 previousPosition)
     {
@@ -37,6 +40,43 @@ public sealed class TouchlineRestartPlanner
             : towardCenter.Normalized();
         return SpaceEvaluator.ClampToPitch(FootballPitchDimensions.ToNormalized(
             ballMeters + direction * (requiredDistance + 0.3f)));
+    }
+
+    // A defender sent to a spot another player already occupies would be held short of it, possibly inside the
+    // required distance, and the restart could then never be taken. Move him further from the ball instead.
+    public Vector2 SeparateDefenderPosition(
+        Vector2 defenderPosition,
+        Vector2 ballPosition,
+        IEnumerable<Vector2> occupiedPositions)
+    {
+        Vector2 ballMeters = FootballPitchDimensions.ToMeters(ballPosition);
+        Vector2 positionMeters = FootballPitchDimensions.ToMeters(defenderPosition);
+        Vector2 offset = positionMeters - ballMeters;
+        Vector2 towardCenter = FootballPitchDimensions.ToMeters(new Vector2(0.5f, 0.5f)) - ballMeters;
+        Vector2 awayFromBall = offset.LengthSquared() > 0.01f ? offset.Normalized() : towardCenter.Normalized();
+        List<Vector2> occupiedMeters = new();
+        foreach (Vector2 occupied in occupiedPositions)
+        {
+            occupiedMeters.Add(FootballPitchDimensions.ToMeters(occupied));
+        }
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            bool isFree = true;
+            foreach (Vector2 occupied in occupiedMeters)
+            {
+                if (occupied.DistanceTo(positionMeters) < RestartPositionSpacingMeters)
+                {
+                    isFree = false;
+                    break;
+                }
+            }
+            if (isFree)
+            {
+                break;
+            }
+            positionMeters += awayFromBall * RestartPositionSpacingMeters;
+        }
+        return SpaceEvaluator.ClampToPitch(FootballPitchDimensions.ToNormalized(positionMeters));
     }
 
     public float ThrowReceptionScore(Vector2 ballPosition, Vector2 receiverPosition, float opponentDistanceMeters)

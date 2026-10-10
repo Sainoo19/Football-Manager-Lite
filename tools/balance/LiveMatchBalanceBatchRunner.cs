@@ -27,6 +27,7 @@ public partial class LiveMatchBalanceBatchRunner : Node
                     : LiveMatchBalanceConfiguration.CreateFootballFundamentalsV1();
             bool invariantsEnabled = arguments.GetValueOrDefault("invariants", "false") == "true";
             List<object> invariantRecords = new();
+            int confinedBallEpisodesOver20Seconds = 0;
             int matchCount = ParsePositiveInt(arguments, "matches", configuration.BatchMatchCount);
             int determinismAuditCount = ParseNonNegativeInt(
                 arguments,
@@ -101,6 +102,7 @@ public partial class LiveMatchBalanceBatchRunner : Node
 
                 if (invariantChecker is not null)
                 {
+                    confinedBallEpisodesOver20Seconds += invariantChecker.ConfinedBallEpisodesOverMonitorLimit;
                     // Recorded outside the try block so violations seen before a crash are kept.
                     foreach (EngineInvariantViolation violation in invariantChecker.Violations)
                     {
@@ -131,6 +133,8 @@ public partial class LiveMatchBalanceBatchRunner : Node
             {
                 File.WriteAllText(Path.Combine(outputDirectory, "invariant-violations.json"),
                     JsonSerializer.Serialize(invariantRecords, new JsonSerializerOptions { WriteIndented = true }));
+                GD.Print($"INVARIANT_MONITOR confined_ball_over_20s={confinedBallEpisodesOver20Seconds} " +
+                         $"matches={matchCount}");
             }
             if (flowDiagnosticsEnabled)
             {

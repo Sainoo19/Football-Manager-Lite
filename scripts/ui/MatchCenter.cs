@@ -27,6 +27,8 @@ public partial class MatchCenter : Control
     private Label _statusLabel = null!;
     private Label _pitchActionLabel = null!;
     private MatchPitch2D _pitchView = null!;
+    private Label? _homeLegend;
+    private Label? _awayLegend;
     private ScrollContainer _eventScroll = null!;
     private VBoxContainer _eventContainer = null!;
     private Label _homeStatsLabel = null!;
@@ -203,7 +205,7 @@ public partial class MatchCenter : Control
         var pitchHeader = new HBoxContainer();
         pitchHeader.AddThemeConstantOverride("separation", 14);
         box.AddChild(pitchHeader);
-        var caption = new Label { Text = "MÔ PHỎNG 2D" };
+        var caption = new Label { Text = "MÔ PHỎNG TRẬN ĐẤU" };
         caption.AddThemeFontSizeOverride("font_size", 11);
         caption.AddThemeColorOverride("font_color", MutedColor);
         pitchHeader.AddChild(caption);
@@ -216,12 +218,12 @@ public partial class MatchCenter : Control
         _pitchActionLabel.AddThemeFontSizeOverride("font_size", 11);
         _pitchActionLabel.AddThemeColorOverride("font_color", new Color("f0d36c"));
         pitchHeader.AddChild(_pitchActionLabel);
-        var homeLegend = new Label { Text = "● Đội bạn" };
-        homeLegend.AddThemeColorOverride("font_color", new Color("4f8cff"));
-        pitchHeader.AddChild(homeLegend);
-        var awayLegend = new Label { Text = "● Đối thủ" };
-        awayLegend.AddThemeColorOverride("font_color", new Color("ff5d73"));
-        pitchHeader.AddChild(awayLegend);
+        _homeLegend = new Label { Text = "● Đội bạn" };
+        _homeLegend.AddThemeColorOverride("font_color", new Color("4f8cff"));
+        pitchHeader.AddChild(_homeLegend);
+        _awayLegend = new Label { Text = "● Đối thủ" };
+        _awayLegend.AddThemeColorOverride("font_color", new Color("ff5d73"));
+        pitchHeader.AddChild(_awayLegend);
 
         _pitchView = new MatchPitch2D
         {
@@ -410,6 +412,7 @@ public partial class MatchCenter : Control
         simulation.use_live_pitch_events = true;
         _pitchView.AttachRuntime(_matchClock);
         _pitchView.SetMatch(simulation);
+        RefreshPitchLegend();
         _homeNameLabel.Text = managed_team.display_name;
         _awayNameLabel.Text = opponent.display_name;
         ClearEvents();

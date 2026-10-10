@@ -310,26 +310,30 @@ public sealed partial class LiveMatchEngine
 
     private void ResolveStalledPossessionContest(StringName carrierId, StringName defenderId)
     {
-        _lastBallTouch.Record(carrierId, _playerTeams[carrierId]);
-        Vector2 direction = new(AttackDirection(_playerTeams[carrierId]), 0f);
         if (defenderId != new StringName() && CurrentPositions.ContainsKey(defenderId))
         {
-            Vector2 carrierMeters = FootballPitchDimensions.ToMeters(CurrentPositions[carrierId]);
-            Vector2 defenderMeters = FootballPitchDimensions.ToMeters(CurrentPositions[defenderId]);
-            Vector2 contestAxis = defenderMeters - carrierMeters;
-            if (contestAxis.LengthSquared() > 0.01f)
+            // A carrier who cannot shake off his marker gets rid of the ball: a hurried pass to the safest
+            // team-mate, or a clearance. Knocking it loose at his own feet let him collect it again at once and
+            // trapped play in an endless loop; here the ball always leaves the duel.
+            StringName outletId = ChoosePassTarget(preferSafe: true);
+            if (outletId != new StringName())
             {
-                // The ball squirts sideways out of the contest: neither player keeps an automatic head start.
-                float side = DecisionRoll(defenderId, carrierId, _decisionSerial + 683) < 0.5f ? -1f : 1f;
-                direction = contestAxis.Normalized().Orthogonal() * side;
+                StartPass(outletId, BallActionKind.Pass);
+                SetAction($"{PlayerName(carrierId)} bị ép quá lâu, chuyền vội cho {PlayerName(outletId)}");
             }
+            else
+            {
+                StartClearance(carrierId);
+                SetAction($"{PlayerName(carrierId)} bị ép quá lâu, phá bóng giải vây");
+            }
+            return;
         }
 
+        _lastBallTouch.Record(carrierId, _playerTeams[carrierId]);
+        Vector2 direction = new(AttackDirection(_playerTeams[carrierId]), 0f);
         GroundDuelLooseBalls++;
         StartLooseBall(
-            defenderId == new StringName()
-                ? $"{PlayerName(carrierId)} chạm bóng quá dài — hai đội tranh bóng tự do"
-                : $"{PlayerName(defenderId)} duy trì áp lực và chọc bóng khỏi chân {PlayerName(carrierId)}",
+            $"{PlayerName(carrierId)} chạm bóng quá dài — hai đội tranh bóng tự do",
             direction * 3.4f);
     }
 

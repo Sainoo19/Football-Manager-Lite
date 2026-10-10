@@ -18,6 +18,8 @@ public sealed class EngineInvariantChecker
     private const double MaximumGoalkeeperHoldSeconds = 8d;
     private const double MaximumConfinedBallSeconds = 45d;
     private const float ConfinedBallRadiusMeters = 6f;
+    // Not an invariant: counted so a fix cannot hide a loop just below the 45-second limit.
+    private const double MonitoredConfinedBallSeconds = 20d;
     private const double MaximumUnownedBallSeconds = 2d;
 
     private sealed class Tally
@@ -41,6 +43,7 @@ public sealed class EngineInvariantChecker
     private Vector2 _confinedAnchor;
     private double _confinedSince;
     private bool _confinedReported;
+    private bool _confinedMonitorCounted;
     private readonly Dictionary<string, int> _confinedActions = new(StringComparer.Ordinal);
     private string _lastObservedAction = string.Empty;
     private double _unownedSince = double.NaN;
@@ -52,6 +55,8 @@ public sealed class EngineInvariantChecker
         .Select(pair => new EngineInvariantViolation(
             pair.Key, pair.Value.Count, pair.Value.FirstGameSeconds, pair.Value.FirstDetail))
         .ToList();
+
+    public int ConfinedBallEpisodesOverMonitorLimit { get; private set; }
 
     public void Attach(LiveMatchEngine engine)
     {
@@ -265,6 +270,7 @@ public sealed class EngineInvariantChecker
             _confinedAnchor = ball;
             _confinedSince = view.SimulationSeconds;
             _confinedReported = false;
+            _confinedMonitorCounted = false;
             _confinedActions.Clear();
         }
         else
@@ -273,6 +279,11 @@ public sealed class EngineInvariantChecker
             if (action != _lastObservedAction)
             {
                 _confinedActions[action] = _confinedActions.GetValueOrDefault(action) + 1;
+            }
+            if (!_confinedMonitorCounted && view.SimulationSeconds - _confinedSince > MonitoredConfinedBallSeconds)
+            {
+                _confinedMonitorCounted = true;
+                ConfinedBallEpisodesOverMonitorLimit++;
             }
             if (!_confinedReported && view.SimulationSeconds - _confinedSince > MaximumConfinedBallSeconds)
             {

@@ -80,7 +80,7 @@ public sealed class LiveMatchBalanceConfiguration
             new[]
             {
                 new BalanceMetricRange("free_box_shots", "C1 Cú sút tự do trong vòng cấm / trận", 0d, 5d, "C"),
-                new BalanceMetricRange("team_recovery_rate", "C2 Tỷ lệ cả đội lùi về kịp", 0.85d, 1d, "C"),
+                new BalanceMetricRange("team_recovery_rate", "C2 Tỷ lệ cả đội lùi về kịp", 0.80d, 1d, "C"),
                 new BalanceMetricRange("goalkeeper_in_box_rate", "C3 Tỷ lệ thủ môn ở trong vòng cấm", 0.99d, 1d, "C"),
                 new BalanceMetricRange("off_ball_rest_defence_players", "C4 Số người ở lại phòng ngự", 2.5d, 10d, "C"),
                 new BalanceMetricRange("passing_options", "C5 Phương án chuyền quanh người cầm bóng", 2d, 10d, "C"),

@@ -15,6 +15,8 @@ public static class Phase1RulesTests
         VerifySomeRunnersLeaveEarly();
         VerifySubstitutionWaitsForStoppage();
         VerifyAiNeverRemovesGoalkeeper();
+        VerifyStalledDuelDoesNotTrapTheBall();
+        VerifyRestartPositionsDoNotOverlap();
         GD.Print("PASS: phase 1 defensive recovery, goal-side blocking and goal-line rule.");
     }
 
@@ -269,6 +271,49 @@ public static class Phase1RulesTests
                 $"subs={state.substitutions_used}, goalkeepers={goalkeepers}).");
         }
         simulation.Dispose();
+    }
+
+    // Regression for the poke loop: in 146 of 200 matches the ball stayed inside a 6 m circle for over 45 seconds
+    // because a carrier whose ball was poked away collected it again 0.2 seconds later, about 14 times in a row.
+    private static void VerifyStalledDuelDoesNotTrapTheBall()
+    {
+        Godot.Collections.Array<FootballTeam> teams = new SampleDataFactory().create_teams();
+        foreach (long seed in new[] { 202612010000L, 202612010002L })
+        {
+            FootballMatchSimulation simulation = new FootballMatchSimulation().setup(teams[0], teams[1], seed);
+            simulation.use_live_pitch_events = true;
+            LiveMatchEngine engine = new();
+            engine.SetMatch(simulation);
+            EngineInvariantChecker checker = new();
+            checker.Attach(engine);
+            engine.Execute(new LiveMatchCommand(LiveMatchCommandKind.Play));
+            new LiveMatchScenarioRunner().RunFor(engine, 3000d, 0.05d);
+            foreach (EngineInvariantViolation violation in checker.Violations)
+            {
+                Check(violation.Code != "I6_BALL_CONFINED",
+                    $"Seed {seed}: the ball must not be trapped in one spot ({violation.FirstDetail}).");
+            }
+            simulation.Dispose();
+        }
+    }
+
+    // Regression for a corner that waited over 60 seconds: two defenders were sent to spots 0.56 m apart, so one
+    // was held 9.0 m from the ball and the corner could not be taken.
+    private static void VerifyRestartPositionsDoNotOverlap()
+    {
+        TouchlineRestartPlanner planner = new();
+        Vector2 corner = new(0.975f, 0.965f);
+        Vector2 first = planner.KeepDefenderAway(new Vector2(0.93f, 0.90f), corner, isCorner: true);
+        Vector2 clash = first + new Vector2(0.004f, 0f);
+        Vector2 separated = planner.SeparateDefenderPosition(clash, corner, new[] { first });
+        Check(FootballPitchDimensions.DistanceMeters(separated, first) >=
+              TouchlineRestartPlanner.RestartPositionSpacingMeters - 0.01f,
+            "Two defenders must not be given restart positions closer than they can physically stand.");
+        Check(FootballPitchDimensions.DistanceMeters(separated, corner) >=
+              TouchlineRestartPlanner.CornerDefenderDistanceMeters,
+            "A separated defender must still respect the required distance from the corner.");
+        Vector2 untouched = planner.SeparateDefenderPosition(first, corner, new[] { new Vector2(0.5f, 0.5f) });
+        Check(untouched.IsEqualApprox(first), "A defender with a free position must not be moved.");
     }
 
     private static void Check(bool condition, string message)

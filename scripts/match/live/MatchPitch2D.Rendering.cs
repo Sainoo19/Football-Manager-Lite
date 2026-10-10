@@ -4,9 +4,40 @@ public partial class MatchPitch2D
 {
     public override void _Draw()
     {
-        if (Simulation is null)
-            return;
         Rect2 field = CalculateFieldRect(Size);
+        if (IsPixelPitchEnabled && _pixelPitchTexture is not null)
+        {
+            _pixelPitchRect = PixelPitchLayout.CalculateTextureRect(Size);
+            DrawTextureRect(_pixelPitchTexture, _pixelPitchRect, false);
+            field = PixelPitchLayout.CalculateFieldRect(_pixelPitchRect);
+        }
+        else
+        {
+            DrawProceduralPitch(field);
+        }
+
+        if (_spriteRenderer is not null)
+        {
+            _spriteRenderer.Visible = IsSpriteDisplayEnabled && Simulation is not null;
+        }
+        if (Simulation is null)
+        {
+            return;
+        }
+
+        if (IsSpriteDisplayEnabled && _spriteRenderer is not null)
+        {
+            DrawSpritePlayers(field);
+        }
+        else
+        {
+            DrawPlayers(field);
+        }
+        DrawBall(field);
+    }
+
+    private void DrawProceduralPitch(Rect2 field)
+    {
         DrawRect(field, new Color("176b45"));
         float stripeWidth = field.Size.X / 12f;
         for (int i = 0; i < 12; i++)
@@ -61,9 +92,6 @@ public partial class MatchPitch2D
             FootballPitchDimensions.WidthMeters;
         DrawRect(new Rect2(new Vector2(field.Position.X - 8, center.Y - goalHeight / 2), new Vector2(8, goalHeight)), line, false, 2);
         DrawRect(new Rect2(new Vector2(field.End.X, center.Y - goalHeight / 2), new Vector2(8, goalHeight)), line, false, 2);
-
-        DrawPlayers(field);
-        DrawBall(field);
     }
 
     private void DrawPlayers(Rect2 field)
@@ -83,7 +111,7 @@ public partial class MatchPitch2D
                 _engine.FixedStepInterpolationAlpha);
             Vector2 point = ToFieldPoint(renderedPosition, field);
             bool isHome = PlayerTeams[playerId] == Simulation.home.team.id;
-            Color color = isHome ? HomeColor : AwayColor;
+            Color color = isHome ? HomeKit.Shirt : AwayKit.Shirt;
             if (PlayerRoles[playerId] == "GK")
                 color = isHome ? new Color("f1c75b") : new Color("ec9f45");
             DrawCircle(point + new Vector2(1.5f, 2), playerRadius + 0.5f, new Color(0, 0, 0, 0.32f));
@@ -108,6 +136,7 @@ public partial class MatchPitch2D
     {
         if (!IsBallVisible)
         {
+            _spriteRenderer?.SetBallVisual(Vector2.Zero, Vector2.Zero, 0f, false);
             return;
         }
 
@@ -119,8 +148,39 @@ public partial class MatchPitch2D
         Vector2 ballPoint = groundPoint - new Vector2(liftPixels * 0.32f, liftPixels * 0.72f);
         float ballRadius = 4.5f + Mathf.Min(liftPixels * 0.10f, 1.4f);
         DrawCircle(groundPoint + new Vector2(1.5f, 2f), 5, new Color(0, 0, 0, 0.38f));
+        if (IsSpriteDisplayEnabled && _spriteRenderer is not null)
+        {
+            _spriteRenderer.SetBallVisual(groundPoint, ballPoint, ballRadius * 2f, true);
+            return;
+        }
         DrawCircle(ballPoint, ballRadius, BallColor);
         DrawArc(ballPoint, ballRadius, 0, Mathf.Tau, 20, new Color("27313d"), 1);
+    }
+
+    private void DrawSpritePlayers(Rect2 field)
+    {
+        if (Simulation is null || _spriteRenderer is null)
+        {
+            return;
+        }
+        float height = Mathf.Clamp(field.Size.Y * 0.12f, 28f, 42f);
+        MatchSpriteKitPalette homeKit = HomeKit;
+        MatchSpriteKitPalette awayKit = AwayKit;
+        foreach ((StringName playerId, Vector2 normalized) in CurrentPositions)
+        {
+            Vector2 renderedPosition = _playerPositionInterpolator.Interpolate(
+                playerId, normalized, _engine.FixedStepInterpolationAlpha);
+            Vector2 point = ToFieldPoint(renderedPosition, field);
+            bool isHome = PlayerTeams[playerId] == Simulation.home.team.id;
+            string role = PlayerRoles[playerId];
+            MatchSpriteKitPalette kit = role == "GK"
+                ? MatchSpriteKitPalette.ForGoalkeeper(isHome) : isHome ? homeKit : awayKit;
+            DrawSetTransform(point + new Vector2(0f, 1f), 0f, new Vector2(1f, 0.35f));
+            DrawCircle(Vector2.Zero, height * 0.24f, new Color(0f, 0f, 0f, 0.32f));
+            DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+            PlayerNumbers.TryGetValue(playerId, out int number);
+            _spriteRenderer.SetPlayerVisual(playerId, point, height, kit, MarkerLabelMode, role, number);
+        }
     }
 
     private void DrawEllipticalArc(Vector2 center, Vector2 radius, float start, float end, Color color)
@@ -134,8 +194,12 @@ public partial class MatchPitch2D
         DrawPolyline(points, color, 2, true);
     }
 
-    private static Vector2 ToFieldPoint(Vector2 normalized, Rect2 field) =>
-        field.Position + new Vector2(normalized.X * field.Size.X, normalized.Y * field.Size.Y);
+    private Vector2 ToFieldPoint(Vector2 normalized, Rect2 field)
+    {
+        return IsPixelPitchEnabled && _pixelPitchTexture is not null
+            ? PixelPitchLayout.ToScreenPoint(normalized, _pixelPitchRect)
+            : field.Position + new Vector2(normalized.X * field.Size.X, normalized.Y * field.Size.Y);
+    }
 
     public static Rect2 CalculateFieldRect(Vector2 controlSize)
     {

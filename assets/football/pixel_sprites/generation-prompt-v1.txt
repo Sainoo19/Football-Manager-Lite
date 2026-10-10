@@ -1,0 +1,19 @@
+Use case: stylized-concept
+Asset type: art-direction approval sheet of football player and ball sprites for an existing Godot 2.5D pixel-art game.
+Input images: Image 1 is ONLY a style and camera reference: the existing green football pitch. Create a BRAND NEW sprite sheet, do not edit or reproduce the pitch, and do not put the pitch behind the characters.
+Primary request: original Nintendo DS era RPG overworld-inspired football sprites, with the approachable compact proportions and elevated camera associated with 2D Pokémon-era overworlds. Six full-body adult football player sprites and two soccer ball sprites. Clearly readable small in-game assets, not portraits.
+Style/medium: authentic crisp low-resolution pixel art, each human designed on an approximately 32x48-pixel base grid then shown enlarged with nearest-neighbor pixels. Clearly visible chunky square pixel clusters; limited palette and 3-tone shading; dark colored pixel outlines; no smooth painting, no vector curves, no 3D render.
+Camera and proportions: fixed elevated orthographic view from slightly above and in front, matching the field reference. Show the top of the head and shoulders, short compact body, substantial head, readable shoes. Original adult athletes with short dark hair, without hats. Keep every human the same body scale and sprite footprint. Small elliptical pixel contact shadow just beneath feet. Soft daylight from upper left.
+Layout: precisely 4 columns by 2 rows on a wide landscape transparent canvas, all 8 cells equally spaced, with generous empty transparent gutters and outer padding. One isolated subject per cell, fully contained. No visible grid, no labels, no text, no borders.
+Top row from left to right:
+1. Home outfield player in blue jersey, white shorts, blue socks, dark football boots, standing idle facing front in a slight three-quarter view.
+2. Away outfield player in red jersey, white shorts, red socks, dark football boots, same idle pose and scale facing front in a slight three-quarter view.
+3. Home goalkeeper in golden-yellow long-sleeve kit and dark shorts, goalkeeper gloves, standing slightly ready facing front, same body scale.
+4. Away goalkeeper in orange long-sleeve kit and dark shorts, goalkeeper gloves, standing slightly ready facing front, same body scale.
+Bottom row from left to right:
+1. The same blue outfield player facing away, a clear back three-quarter view.
+2. The same red outfield player facing away, a clear back three-quarter view.
+3. A small classic white soccer ball with dark pentagonal patches, round volume represented by clean pixel shading, ground contact shadow.
+4. The same small soccer ball with rotated patch pattern as a second rolling pose, same diameter and ground shadow.
+Ball scale: the ball must be about one-quarter the height of a human sprite, visibly much smaller than a player. Do not enlarge the ball to fill its cell.
+Constraints: genuine transparent background with preserved alpha, including between all subjects. No painted checkerboard, no scenery, no floor, no pitch, no logos, no lettering, no uniform numbers, no watermark. This sheet is for visual approval of appearance, not a completed animation atlas. Keep the style cohesive with the reference while prioritizing clean chunky sprites.

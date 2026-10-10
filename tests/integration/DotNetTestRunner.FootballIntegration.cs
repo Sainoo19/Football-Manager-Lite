@@ -9,6 +9,16 @@ public partial class DotNetTestRunner : Node
     {
         try
         {
+            if (OS.GetCmdlineUserArgs().Contains("--suite=pitch-presentation"))
+            {
+                PixelPitchPresentationTests.Run();
+                MatchSpritePresentationTests.Run();
+                TestPitchScaleAndMovementSpeed();
+                TestPitchPauseAndReset();
+                GetTree().Quit(0);
+                return;
+            }
+
             if (OS.GetCmdlineUserArgs().Contains("--suite=core-behaviour"))
             {
                 CoreBehaviourTests.Run();
@@ -46,6 +56,8 @@ public partial class DotNetTestRunner : Node
             TestMatchSimulation();
             TestLiveMatchRules();
             TestPitchScaleAndMovementSpeed();
+            PixelPitchPresentationTests.Run();
+            MatchSpritePresentationTests.Run();
             TestOffsideRule();
             TestPassTrajectoryAndNearestContest();
             TestDefensiveBlockSpacingAndRollingBall();

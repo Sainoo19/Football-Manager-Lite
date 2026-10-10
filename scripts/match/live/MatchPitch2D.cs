@@ -81,6 +81,12 @@ public partial class MatchPitch2D : Control
 
     public override void _Ready()
     {
+        _pixelPitchTexture = GD.Load<Texture2D>(PixelPitchLayout.TexturePath);
+        TextureFilter = TextureFilterEnum.Nearest;
+        _spriteRenderer = new MatchSpriteRenderer { Name = "MatchSprites", Visible = IsSpriteDisplayEnabled };
+        _spriteRenderer.Initialize(new MatchSpriteAtlas());
+        AddChild(_spriteRenderer);
+        ResetSpritePresentation();
         _engine.ActionChanged += HandleActionChanged;
         _engine.LiveMatchEvent += HandleLiveMatchEvent;
         SetExpandedDisplay(IsExpandedDisplay);
@@ -97,7 +103,7 @@ public partial class MatchPitch2D : Control
     public override void _Process(double deltaValue)
     {
         _engine.Process(deltaValue);
-        _playerPositionInterpolator.Capture(CurrentPositions);
+        CapturePresentationPositions();
         QueueRedraw();
     }
 
@@ -110,6 +116,7 @@ public partial class MatchPitch2D : Control
     {
         _engine.SetMatch(simulation);
         _playerPositionInterpolator.Reset(CurrentPositions);
+        ResetSpritePresentation();
         QueueRedraw();
     }
 
@@ -121,21 +128,21 @@ public partial class MatchPitch2D : Control
     public void AnimateMinute(Array<FootballMatchEvent> newEvents)
     {
         _engine.AnimateMinute(newEvents);
-        _playerPositionInterpolator.Capture(CurrentPositions);
+        CapturePresentationPositions();
         QueueRedraw();
     }
 
     public void AdvanceGameTime(double gameDeltaSeconds)
     {
         _engine.AdvanceGameTime(gameDeltaSeconds);
-        _playerPositionInterpolator.Capture(CurrentPositions);
+        CapturePresentationPositions();
         QueueRedraw();
     }
 
     public Array<FootballMatchEvent> AdvanceSynchronizedGameTime(double gameDeltaSeconds)
     {
         Array<FootballMatchEvent> events = _engine.AdvanceSynchronizedGameTime(gameDeltaSeconds);
-        _playerPositionInterpolator.Capture(CurrentPositions);
+        CapturePresentationPositions();
         QueueRedraw();
         return events;
     }
@@ -146,6 +153,7 @@ public partial class MatchPitch2D : Control
         if (started)
         {
             _playerPositionInterpolator.Reset(CurrentPositions);
+            ResetSpritePresentation();
         }
         QueueRedraw();
         return started;
@@ -161,7 +169,7 @@ public partial class MatchPitch2D : Control
         bool overridden = _engine.OverridePlayerPosition(playerId, position);
         if (overridden)
         {
-            _playerPositionInterpolator.Capture(CurrentPositions);
+            CapturePresentationPositions();
         }
         return overridden;
     }

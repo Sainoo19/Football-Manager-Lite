@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Godot;
 
 public sealed partial class LiveMatchEngine
@@ -92,8 +93,31 @@ public sealed partial class LiveMatchEngine
                 target = SpaceEvaluator.ClampToPitch(_state.RestartPosition.Lerp(target, 0.25f));
             }
             TargetPositions[playerId] = target;
+        }
+
+        // Defenders whose position overlaps another player's are moved further from the ball, in a stable order.
+        foreach (StringName playerId in OrderedPlayerIds(CurrentPositions.Keys))
+        {
+            if (playerId == _state.RestartTakerId || _playerTeams[playerId] == _state.RestartTeamId)
+            {
+                continue;
+            }
+            List<Vector2> occupied = new(TargetPositions.Count);
+            foreach ((StringName otherId, Vector2 otherTarget) in TargetPositions)
+            {
+                if (otherId != playerId)
+                {
+                    occupied.Add(otherTarget);
+                }
+            }
+            TargetPositions[playerId] = _touchlineRestartPlanner.SeparateDefenderPosition(
+                TargetPositions[playerId], _state.RestartPosition, occupied);
+        }
+
+        foreach (StringName playerId in CurrentPositions.Keys)
+        {
             _playerIntents[playerId] = new PlayerIntent(
-                PlayerIntentKind.RepositionForRestart, target, LiveTeamPhase.SetPiece);
+                PlayerIntentKind.RepositionForRestart, TargetPositions[playerId], LiveTeamPhase.SetPiece);
         }
     }
 
