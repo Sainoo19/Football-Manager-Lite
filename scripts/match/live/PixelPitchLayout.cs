@@ -2,14 +2,13 @@ using Godot;
 
 public static class PixelPitchLayout
 {
-    public const string TexturePath = "res://assets/football/pixel_pitch/pitch_2_5d_v1.png";
+    public const string TexturePath = "res://assets/football/pixel_pitch/pitch_ground_v2.png";
 
-    private static readonly Vector2 ImageSize = new(1774f, 887f);
-    private static readonly Vector2 TopLeft = new(170f, 130f);
-    private static readonly Vector2 TopRight = new(1602f, 130f);
-    private static readonly Vector2 BottomLeft = new(105f, 720f);
-    private static readonly Vector2 BottomRight = new(1670f, 720f);
-    private static readonly Vector2 CenterSpot = new(886f, 405f);
+    public static readonly Vector2 ImageSize = new(1024f, 512f);
+    private static readonly Vector2 TopLeft = new(100f, 64f);
+    private static readonly Vector2 TopRight = new(924f, 64f);
+    private static readonly Vector2 BottomLeft = new(64f, 440f);
+    private static readonly Vector2 BottomRight = new(960f, 440f);
     private const float Margin = 8f;
 
     public static Rect2 CalculateTextureRect(Vector2 controlSize)
@@ -33,17 +32,11 @@ public static class PixelPitchLayout
 
     public static Vector2 ToScreenPoint(Vector2 normalized, Rect2 textureRect)
     {
-        // Calibrate to the painted boundaries and center spot rather than the PNG's outer fence.
-        // The two halves account for the generated artwork's slightly asymmetric foreshortening.
-        float imageY = normalized.Y <= 0.5f
-            ? Mathf.Lerp(TopLeft.Y, CenterSpot.Y, normalized.Y * 2f)
-            : Mathf.Lerp(CenterSpot.Y, BottomLeft.Y, (normalized.Y - 0.5f) * 2f);
-        float depth = (imageY - TopLeft.Y) / (BottomLeft.Y - TopLeft.Y);
-        float left = Mathf.Lerp(TopLeft.X, BottomLeft.X, depth);
-        float right = Mathf.Lerp(TopRight.X, BottomRight.X, depth);
-        float imageX = normalized.X <= 0.5f
-            ? Mathf.Lerp(left, CenterSpot.X, normalized.X * 2f)
-            : Mathf.Lerp(CenterSpot.X, right, (normalized.X - 0.5f) * 2f);
+        // The asset generator and actors use this same symmetric projection, including off-pitch positions.
+        float imageY = Mathf.Lerp(TopLeft.Y, BottomLeft.Y, normalized.Y);
+        float left = Mathf.Lerp(TopLeft.X, BottomLeft.X, normalized.Y);
+        float right = Mathf.Lerp(TopRight.X, BottomRight.X, normalized.Y);
+        float imageX = Mathf.Lerp(left, right, normalized.X);
         return textureRect.Position + new Vector2(imageX, imageY) / ImageSize * textureRect.Size;
     }
 }

@@ -29,6 +29,6 @@ Use a neutral base plus a precisely aligned mask to recolor only kit fabric. Kee
 trim and boots independent of team colors. Align sprite cells and foot pivots, normalize the pixel grid,
 and create running frames. The idle approval boards are not final animation atlases.
 
-The neutral eight-direction sheet is now used by the live-match sprite trial. The kit separation
-board remains an illustration; the game generates an aligned mask from the neutral sprite instead.
+The neutral eight-direction sheet is the source of the live-match player sheet. The kit separation
+board remains an illustration; the offline exporter derives an aligned mask from the neutral sprite instead.
 See `../RUNTIME.md` for the integration and its animation limitations.

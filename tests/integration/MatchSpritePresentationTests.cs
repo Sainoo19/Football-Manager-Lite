@@ -9,6 +9,7 @@ public static class MatchSpritePresentationTests
         VerifyFacingStrideAndTeleport();
         VerifyKitUsesTeamData();
         VerifyAtlasAndRenderer();
+        VerifyExportedSheetsMatchTheirSources();
         GD.Print("PASS: sprite 8 hướng, mask trang phục, đổi áo, bước chạy và bóng dùng đúng presentation.");
     }
 
@@ -55,8 +56,14 @@ public static class MatchSpritePresentationTests
     private static void VerifyAtlasAndRenderer()
     {
         MatchSpriteAtlas atlas = new();
+        Check(atlas.PlayerSheet.GetSize() == new Vector2(192f, 144f) &&
+            atlas.KitMaskSheet.GetSize() == atlas.PlayerSheet.GetSize(),
+            "Sheet cầu thủ và sheet mask phải là lưới 4 × 2 ô 48 × 72.");
         for (int facing = 0; facing < 8; facing++)
         {
+            Check(atlas.Player(facing) is AtlasTexture frame && frame.Atlas == atlas.PlayerSheet &&
+                frame.Region == (Rect2)MatchSpriteAtlas.FrameRegion(facing),
+                "Mỗi hướng phải là một vùng của sheet đã xuất, không phải ảnh cắt lại lúc mở game.");
             Check(atlas.Player(facing).GetSize() == new Vector2(48f, 72f) &&
                 atlas.Mask(facing).GetSize() == atlas.Player(facing).GetSize(),
                 "Mọi hướng phải dùng cùng kích thước và mask trùng pixel.");
@@ -70,6 +77,8 @@ public static class MatchSpritePresentationTests
                 for (int x = 0; x < mask.GetWidth(); x++)
                 {
                     Color region = mask.GetPixel(x, y);
+                    Check(region.A > 0f || region.R + region.G + region.B == 0f,
+                        "Pixel trong suốt của mask không được mang màu, nếu không shader sẽ tô nhầm viền.");
                     if (region.R > 0.9f) shirt++;
                     if (region.G > 0.9f) shorts++;
                     if (region.B > 0.9f) socks++;
@@ -85,6 +94,7 @@ public static class MatchSpritePresentationTests
                 "Mỗi hướng phải có vùng áo, quần và tất để đổi màu riêng.");
         }
         Check(atlas.Ball(0).GetSize() == new Vector2(16f, 16f), "Bóng phải có sprite riêng.");
+        Check(atlas.BallShadow.GetSize() == new Vector2(16f, 8f), "Bóng đổ phải có sprite pixel riêng.");
 
         MatchSpriteRenderer renderer = new();
         renderer.Initialize(atlas);
@@ -98,6 +108,9 @@ public static class MatchSpritePresentationTests
         Sprite2D player = renderer.GetNode<Sprite2D>("Player_home");
         Texture2D texture = player.Texture;
         ShaderMaterial material = (ShaderMaterial)player.Material;
+        Check(material.GetShaderParameter("kit_mask").As<Texture2D>() == atlas.KitMaskSheet &&
+            material.GetShaderParameter("sheet_grid").AsVector2() == new Vector2(4f, 2f),
+            "Shader phải nhận cả sheet mask và kích thước lưới để lấy đúng ô của từng hướng.");
         renderer.SetPlayerVisual("home", foot, 32f, red, PlayerMarkerLabelMode.Position, "CM", 8);
         Check(player.Texture == texture && player.Position == foot &&
             material.GetShaderParameter("shirt_color").AsColor() == red.Shirt &&
@@ -112,13 +125,37 @@ public static class MatchSpritePresentationTests
         renderer.SetPlayerVisual("home", foot, 32f, red, PlayerMarkerLabelMode.Position, "CM", 8);
         Check(material.GetShaderParameter("step_offset").AsSingle() == step,
             "Render frame/pause không có simulation tick mới phải giữ nguyên pose.");
+        renderer.SetPlayerMarkerVisual("home", foot, 24f, red.Shirt, "8", 400);
+        Check(player.Material is null && player.ZIndex == 400,
+            "Chấm cầu thủ cũng phải nằm trong cùng lớp sắp xếp với gôn.");
+        renderer.SetPlayerVisual("home", foot, 32f, red, PlayerMarkerLabelMode.Position, "CM", 8, 401);
+        Check(player.Material == material && player.Texture == atlas.Player(6) &&
+            player.Offset == -MatchSpriteAtlas.FootPivot && player.ZIndex == 401 &&
+            renderer.GetNode<Label>("Label_home").Text == "CM",
+            "Bật sprite lại phải phục hồi pose, điểm chân, nhãn và material.");
         renderer.SetBallVisual(foot, foot - new Vector2(0f, 20f), 10f, true);
         Sprite2D ball = renderer.GetNode<Sprite2D>("BallSprite");
-        Check(ball.Visible && ball.Position.Y < foot.Y && ball.ZIndex > player.ZIndex,
+        Sprite2D ballShadow = renderer.GetNode<Sprite2D>("BallShadowSprite");
+        Check(ball.Visible && ballShadow.Visible && ball.Position.Y < foot.Y && ball.ZIndex > player.ZIndex && ball.ZIndex > ballShadow.ZIndex,
             "Bóng bổng phải ở phía trên bóng đổ và cầu thủ.");
         renderer.SetBallVisual(foot, foot, 10f, false);
-        Check(!ball.Visible, "Bóng bị ẩn trong engine phải ẩn sprite tương ứng.");
+        Check(!ball.Visible && !ballShadow.Visible, "Bóng bị ẩn trong engine phải ẩn sprite tương ứng.");
         renderer.Free();
+    }
+
+    // The committed sheets must be exactly what the offline exporter produces from the source boards.
+    private static void VerifyExportedSheetsMatchTheirSources()
+    {
+        MatchSpriteAtlas atlas = new();
+        using PlayerSpriteSheetBuilder.Sheets expected = PlayerSpriteSheetBuilder.Build();
+        Check(PlayerSpriteSheetBuilder.HasSamePixels(expected.Players, atlas.PlayerSheet.GetImage()),
+            "Sheet cầu thủ đã xuất không khớp ảnh nguồn; hãy chạy lại PlayerSpriteSheetExporter.");
+        Check(PlayerSpriteSheetBuilder.HasSamePixels(expected.KitMask, atlas.KitMaskSheet.GetImage()),
+            "Sheet mask đã xuất không khớp ảnh nguồn; hãy chạy lại PlayerSpriteSheetExporter.");
+        Check(PlayerSpriteSheetBuilder.HasSamePixels(expected.Ball, atlas.BallSheet.GetImage()),
+            "Sheet bóng đã xuất không khớp ảnh nguồn; hãy chạy lại PlayerSpriteSheetExporter.");
+        Check(PlayerSpriteSheetBuilder.HasSamePixels(expected.BallShadow, atlas.BallShadow.GetImage()),
+            "Sheet bóng đổ đã xuất không khớp; hãy chạy lại PlayerSpriteSheetExporter.");
     }
 
     private static void Check(bool condition, string message)

@@ -1,150 +1,87 @@
 using System;
 using Godot;
 
+// Loads the pre-normalised sprite sheets. All cropping, scaling and mask generation happens offline in
+// tools/assets/PlayerSpriteSheetExporter; nothing is processed when a match opens.
 public sealed class MatchSpriteAtlas
 {
-    public const string PlayerTexturePath =
-        "res://assets/football/pixel_sprites/modular_preview/neutral_eight_directions_v1.png";
-    public const string BallTexturePath = "res://assets/football/pixel_sprites/sprite_preview_v1.png";
+    public const string PlayerSheetPath = "res://assets/football/pixel_sprites/runtime/player_sheet_48x72.png";
+    public const string KitMaskSheetPath = "res://assets/football/pixel_sprites/runtime/player_kit_mask_48x72.png";
+    public const string BallSheetPath = "res://assets/football/pixel_sprites/runtime/ball_sheet_16x16.png";
+    public const string BallShadowPath = "res://assets/football/pixel_sprites/runtime/ball_shadow_16x8.png";
     public const string ShaderPath = "res://assets/football/pixel_sprites/kit_recolor.gdshader";
     public static readonly Vector2 FootPivot = new(24f, 70f);
     public const int FrameWidth = 48;
     public const int FrameHeight = 72;
     public const int BodyHeight = 64;
+    // Frame index equals facing: column = facing % SheetColumns, row = facing / SheetColumns.
+    public const int FacingCount = 8;
+    public const int SheetColumns = 4;
+    public const int SheetRows = 2;
+    public const int BallSize = 16;
+    public const int BallFrameCount = 2;
+    public const int BallShadowWidth = 16;
+    public const int BallShadowHeight = 8;
 
-    private readonly Texture2D[] _players = new Texture2D[8];
-    private readonly Texture2D[] _masks = new Texture2D[8];
-    private readonly Texture2D[] _balls = new Texture2D[2];
-    private static readonly Vector3[] KitBoundaries =
-    {
-        new(0.62f, 0.77f, 0.88f), new(0.61f, 0.74f, 0.85f),
-        new(0.67f, 0.78f, 0.88f), new(0.63f, 0.76f, 0.87f),
-        new(0.65f, 0.78f, 0.88f), new(0.65f, 0.76f, 0.87f),
-        new(0.66f, 0.78f, 0.89f), new(0.62f, 0.76f, 0.86f)
-    };
+    private readonly Texture2D[] _players = new Texture2D[FacingCount];
+    private readonly Texture2D[] _masks = new Texture2D[FacingCount];
+    private readonly Texture2D[] _balls = new Texture2D[BallFrameCount];
 
+    public Texture2D PlayerSheet { get; }
+    // The kit shader samples this whole sheet with the player sheet's UV, so it is never sliced.
+    public Texture2D KitMaskSheet { get; }
+    public Texture2D BallSheet { get; }
+    public Texture2D BallShadow { get; }
     public Shader KitShader { get; }
 
     public MatchSpriteAtlas()
     {
         KitShader = GD.Load<Shader>(ShaderPath);
-        using Image sheet = LoadImage(PlayerTexturePath);
-        for (int facing = 0; facing < 8; facing++)
+        Vector2 playerSheetSize = new(FrameWidth * SheetColumns, FrameHeight * SheetRows);
+        PlayerSheet = LoadSheet(PlayerSheetPath, playerSheetSize);
+        KitMaskSheet = LoadSheet(KitMaskSheetPath, playerSheetSize);
+        BallSheet = LoadSheet(BallSheetPath, new Vector2(BallSize * BallFrameCount, BallSize));
+        BallShadow = LoadSheet(BallShadowPath, new Vector2(BallShadowWidth, BallShadowHeight));
+        // Frames are regions of the loaded sheets; no pixels are copied or processed.
+        for (int facing = 0; facing < FacingCount; facing++)
         {
-            using Image sprite = FitPlayer(CropCell(sheet, facing % 4, facing / 4));
-            using Image mask = CreateMask(sprite, facing);
-            _players[facing] = ImageTexture.CreateFromImage(sprite);
-            _masks[facing] = ImageTexture.CreateFromImage(mask);
+            _players[facing] = new AtlasTexture { Atlas = PlayerSheet, Region = FrameRegion(facing) };
+            _masks[facing] = new AtlasTexture { Atlas = KitMaskSheet, Region = FrameRegion(facing) };
         }
-
-        using Image ballSheet = LoadImage(BallTexturePath);
-        for (int frame = 0; frame < 2; frame++)
+        for (int frame = 0; frame < BallFrameCount; frame++)
         {
-            using Image ball = CropCell(ballSheet, frame + 2, 1);
-            ball.Resize(16, 16, Image.Interpolation.Nearest);
-            _balls[frame] = ImageTexture.CreateFromImage(ball);
+            _balls[frame] = new AtlasTexture
+            {
+                Atlas = BallSheet,
+                Region = new Rect2(frame * BallSize, 0f, BallSize, BallSize)
+            };
         }
     }
 
     public Texture2D Player(int facing) => _players[ValidateFacing(facing)];
     public Texture2D Mask(int facing) => _masks[ValidateFacing(facing)];
-    public Texture2D Ball(int frame) => _balls[frame is >= 0 and < 2
+    public Texture2D Ball(int frame) => _balls[frame is >= 0 and < BallFrameCount
         ? frame : throw new ArgumentOutOfRangeException(nameof(frame))];
 
-    private static int ValidateFacing(int facing) => facing is >= 0 and < 8
+    private static int ValidateFacing(int facing) => facing is >= 0 and < FacingCount
         ? facing : throw new ArgumentOutOfRangeException(nameof(facing));
 
-    private static Image LoadImage(string path)
+    public static Rect2I FrameRegion(int facing)
     {
-        Texture2D texture = GD.Load<Texture2D>(path);
-        Image image = texture.GetImage();
-        if (image is null || image.IsEmpty())
-        {
-            throw new InvalidOperationException($"Cannot read sprite texture: {path}");
-        }
-        if (image.IsCompressed() && image.Decompress() != Error.Ok)
-        {
-            throw new InvalidOperationException($"Cannot decompress sprite texture: {path}");
-        }
-        image.Convert(Image.Format.Rgba8);
-        return image;
+        ValidateFacing(facing);
+        return new Rect2I(facing % SheetColumns * FrameWidth, facing / SheetColumns * FrameHeight,
+            FrameWidth, FrameHeight);
     }
 
-    private static Image CropCell(Image sheet, int column, int row)
+    private static Texture2D LoadSheet(string path, Vector2 expectedSize)
     {
-        int left = sheet.GetWidth() * column / 4;
-        int top = sheet.GetHeight() * row / 2;
-        int right = sheet.GetWidth() * (column + 1) / 4;
-        int bottom = sheet.GetHeight() * (row + 1) / 2;
-        using Image cell = sheet.GetRegion(new Rect2I(left, top, right - left, bottom - top));
-        // Ignore almost-transparent generated edge noise when aligning feet and sprite scale.
-        byte[] pixels = cell.GetData();
-        int minX = cell.GetWidth();
-        int minY = cell.GetHeight();
-        int maxX = -1;
-        int maxY = -1;
-        for (int y = 0; y < cell.GetHeight(); y++)
+        Texture2D texture = GD.Load<Texture2D>(path)
+            ?? throw new InvalidOperationException($"Cannot load sprite sheet: {path}");
+        if (texture.GetSize() != expectedSize)
         {
-            for (int x = 0; x < cell.GetWidth(); x++)
-            {
-                if (pixels[(y * cell.GetWidth() + x) * 4 + 3] < 160)
-                {
-                    continue;
-                }
-                minX = Math.Min(minX, x);
-                minY = Math.Min(minY, y);
-                maxX = Math.Max(maxX, x);
-                maxY = Math.Max(maxY, y);
-            }
+            throw new InvalidOperationException(
+                $"Sprite sheet {path} is {texture.GetSize()}, expected {expectedSize}. Re-run the exporter.");
         }
-        if (maxX < minX || maxY < minY)
-        {
-            throw new InvalidOperationException("A sprite atlas cell is empty.");
-        }
-        return cell.GetRegion(new Rect2I(minX, minY, maxX - minX + 1, maxY - minY + 1));
-    }
-
-    private static Image FitPlayer(Image source)
-    {
-        using (source)
-        {
-            float scale = Mathf.Min(44f / source.GetWidth(), BodyHeight / (float)source.GetHeight());
-            int width = Mathf.Max(1, Mathf.RoundToInt(source.GetWidth() * scale));
-            int height = Mathf.Max(1, Mathf.RoundToInt(source.GetHeight() * scale));
-            source.Resize(width, height, Image.Interpolation.Nearest);
-            Image canvas = Image.CreateEmpty(FrameWidth, FrameHeight, false, Image.Format.Rgba8);
-            canvas.Fill(Colors.Transparent);
-            canvas.BlitRect(source, new Rect2I(0, 0, width, height),
-                new Vector2I((FrameWidth - width) / 2, (int)FootPivot.Y - height));
-            return canvas;
-        }
-    }
-
-    private static Image CreateMask(Image sprite, int facing)
-    {
-        Image mask = Image.CreateEmpty(FrameWidth, FrameHeight, false, Image.Format.Rgba8);
-        mask.Fill(Colors.Transparent);
-        Vector3 boundaries = KitBoundaries[facing];
-        float top = FootPivot.Y - BodyHeight;
-        for (int y = 0; y < FrameHeight; y++)
-        {
-            float bodyY = (y - top) / BodyHeight;
-            for (int x = 0; x < FrameWidth; x++)
-            {
-                Color color = sprite.GetPixel(x, y);
-                float brightest = Mathf.Max(color.R, Mathf.Max(color.G, color.B));
-                float darkest = Mathf.Min(color.R, Mathf.Min(color.G, color.B));
-                // Neutral cloth is gray. Skin/hair, fixed white trim, dark outlines and boots remain untouched.
-                if (color.A < 0.5f || brightest - darkest > 0.085f || brightest < 0.20f ||
-                    brightest > 0.87f || bodyY < 0.30f || bodyY >= boundaries.Z)
-                {
-                    continue;
-                }
-                Color region = bodyY < boundaries.X ? Colors.Red
-                    : bodyY < boundaries.Y ? new Color(0f, 1f, 0f) : Colors.Blue;
-                mask.SetPixel(x, y, region);
-            }
-        }
-        return mask;
+        return texture;
     }
 }

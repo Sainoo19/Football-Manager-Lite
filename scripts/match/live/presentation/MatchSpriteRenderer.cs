@@ -15,11 +15,15 @@ public partial class MatchSpriteRenderer : Node2D
         public PlayerMarkerLabelMode? LabelMode { get; set; }
         public int SquadNumber { get; set; }
         public string Role { get; set; } = "";
+        public bool IsMarker { get; set; }
     }
 
     private readonly Dictionary<StringName, PlayerVisual> _players = new();
     private MatchSpriteAtlas? _atlas;
     private Sprite2D? _ballSprite;
+    private Sprite2D? _ballShadowSprite;
+    private Texture2D? _markerTexture;
+    private Texture2D? _plainBallTexture;
     private Vector2 _previousBallPosition;
     private float _ballTravelMeters;
 
@@ -31,7 +35,18 @@ public partial class MatchSpriteRenderer : Node2D
             throw new InvalidOperationException("Sprite renderer is already initialized.");
         }
         _atlas = atlas;
+        YSortEnabled = true;
         TextureFilter = TextureFilterEnum.Nearest;
+        _markerTexture = CreateCircleTexture(32);
+        _plainBallTexture = CreateCircleTexture(16);
+        _ballShadowSprite = new Sprite2D
+        {
+            Name = "BallShadowSprite",
+            Texture = atlas.BallShadow,
+            Centered = true,
+            Visible = false
+        };
+        AddChild(_ballShadowSprite);
         _ballSprite = new Sprite2D { Name = "BallSprite", Texture = atlas.Ball(0), Visible = false };
         AddChild(_ballSprite);
     }
@@ -98,6 +113,10 @@ public partial class MatchSpriteRenderer : Node2D
     {
         MatchSpriteAtlas atlas = _atlas ?? throw new InvalidOperationException("Sprite atlas is not initialized.");
         ShaderMaterial material = new() { Shader = atlas.KitShader };
+        // The mask sheet shares the player sheet's layout, so one texture serves every facing.
+        material.SetShaderParameter("kit_mask", atlas.KitMaskSheet);
+        material.SetShaderParameter("sheet_grid",
+            new Vector2(MatchSpriteAtlas.SheetColumns, MatchSpriteAtlas.SheetRows));
         Sprite2D sprite = new()
         {
             Name = $"Player_{playerId}",
@@ -136,17 +155,26 @@ public partial class MatchSpriteRenderer : Node2D
         MatchSpriteKitPalette palette,
         PlayerMarkerLabelMode labelMode,
         string role,
-        int squadNumber)
+        int squadNumber,
+        int? depthIndex = null)
     {
         if (!_players.TryGetValue(playerId, out PlayerVisual? player) || _atlas is null)
         {
             return;
         }
+        if (player.IsMarker)
+        {
+            player.IsMarker = false;
+            player.Facing = -1;
+            player.LabelMode = null;
+            player.Sprite.Material = player.Material;
+            player.Sprite.SelfModulate = Colors.White;
+            player.Sprite.Offset = -MatchSpriteAtlas.FootPivot;
+        }
         if (player.Facing != player.Motion.Facing)
         {
             player.Facing = player.Motion.Facing;
             player.Sprite.Texture = _atlas.Player(player.Facing);
-            player.Material.SetShaderParameter("kit_mask", _atlas.Mask(player.Facing));
         }
         if (player.Palette != palette)
         {
@@ -160,7 +188,7 @@ public partial class MatchSpriteRenderer : Node2D
         float scale = bodyHeight / MatchSpriteAtlas.BodyHeight;
         player.Sprite.Scale = Vector2.One * scale;
         player.Sprite.Position = footPoint;
-        player.Sprite.ZIndex = Mathf.Clamp(Mathf.RoundToInt(footPoint.Y) + 100, 1, 1500);
+        player.Sprite.ZIndex = depthIndex ?? Mathf.Clamp(Mathf.RoundToInt(footPoint.Y) + 100, 1, 1500);
         player.Label.Position = footPoint + new Vector2(-19f, 3f);
         if (player.LabelMode != labelMode || player.SquadNumber != squadNumber || player.Role != role)
         {
@@ -172,22 +200,74 @@ public partial class MatchSpriteRenderer : Node2D
         }
     }
 
-    public void SetBallVisual(Vector2 groundPoint, Vector2 airPoint, float diameter, bool visible)
+    public void SetPlayerMarkerVisual(StringName playerId, Vector2 point, float diameter, Color color,
+        string text, int depthIndex)
+    {
+        if (!_players.TryGetValue(playerId, out PlayerVisual? player))
+        {
+            return;
+        }
+        player.IsMarker = true;
+        player.Sprite.Material = null;
+        player.Sprite.Texture = _markerTexture;
+        player.Sprite.Offset = new Vector2(-16f, -16f);
+        player.Sprite.SelfModulate = color;
+        player.Sprite.Position = point;
+        player.Sprite.Scale = Vector2.One * (diameter / 32f);
+        player.Sprite.ZIndex = depthIndex;
+        player.Label.Position = point + new Vector2(-19f, -7f);
+        player.Label.Text = text;
+    }
+
+    public void SetBallVisual(Vector2 groundPoint, Vector2 airPoint, float diameter, bool visible,
+        int? depthIndex = null, bool spriteEnabled = true)
     {
         if (_ballSprite is null || _atlas is null)
         {
             return;
         }
         _ballSprite.Visible = visible;
+        if (_ballShadowSprite is not null)
+        {
+            _ballShadowSprite.Visible = visible && spriteEnabled;
+        }
         if (!visible)
         {
             return;
         }
-        _ballSprite.Texture = _atlas.Ball((int)(_ballTravelMeters / 0.18f) % 2);
+        if (_ballShadowSprite is not null && spriteEnabled)
+        {
+            float heightOffset = groundPoint.DistanceTo(airPoint);
+            float shadowScale = Mathf.Clamp(1f - heightOffset * 0.008f, 0.35f, 1.2f) * (diameter / 16f);
+            _ballShadowSprite.Scale = new Vector2(shadowScale, shadowScale * 0.8f);
+            _ballShadowSprite.Position = groundPoint + new Vector2(0f, 1f);
+            _ballShadowSprite.Modulate = new Color(1f, 1f, 1f, Mathf.Clamp(1f - heightOffset * 0.012f, 0.25f, 0.9f));
+            _ballShadowSprite.ZIndex = Mathf.Clamp(Mathf.RoundToInt(groundPoint.Y) + 50, 1, 1500);
+        }
+        _ballSprite.Texture = spriteEnabled ? _atlas.Ball((int)(_ballTravelMeters / 0.18f) % 2) : _plainBallTexture;
         _ballSprite.Scale = Vector2.One * (diameter / 16f);
         _ballSprite.Rotation = _ballTravelMeters * 2f;
         _ballSprite.Position = airPoint;
-        _ballSprite.ZIndex = groundPoint.DistanceTo(airPoint) > 4f
-            ? 2100 : Mathf.Clamp(Mathf.RoundToInt(groundPoint.Y) + 105, 1, 1505);
+        _ballSprite.ZIndex = depthIndex ?? (groundPoint.DistanceTo(airPoint) > 4f
+            ? 2100 : Mathf.Clamp(Mathf.RoundToInt(groundPoint.Y) + 105, 1, 1505));
+    }
+
+    private static Texture2D CreateCircleTexture(int size)
+    {
+        using Image image = Image.CreateEmpty(size, size, false, Image.Format.Rgba8);
+        float radius = size / 2f - 1f;
+        Vector2 center = new((size - 1f) / 2f, (size - 1f) / 2f);
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float distance = new Vector2(x, y).DistanceTo(center);
+                if (distance <= radius)
+                {
+                    image.SetPixel(x, y, distance >= radius - 1f ? new Color("b7c2ca") : Colors.White);
+                }
+            }
+        }
+        return ImageTexture.CreateFromImage(image);
     }
 }

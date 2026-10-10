@@ -6,6 +6,7 @@ public partial class MatchPitch2D
     private Texture2D? _pixelPitchTexture;
     private Rect2 _pixelPitchRect;
     private MatchSpriteRenderer? _spriteRenderer;
+    private MatchGoalRenderer? _goalRenderer;
 
     public PlayerMarkerLabelMode MarkerLabelMode { get; private set; } = PlayerMarkerLabelMode.Position;
     public bool IsExpandedDisplay { get; private set; } = true;
@@ -36,7 +37,7 @@ public partial class MatchPitch2D
         IsSpriteDisplayEnabled = enabled;
         if (_spriteRenderer is not null)
         {
-            _spriteRenderer.Visible = enabled;
+            _spriteRenderer.Visible = Simulation is not null;
         }
         QueueRedraw();
     }

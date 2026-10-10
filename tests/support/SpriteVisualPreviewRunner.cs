@@ -5,7 +5,7 @@ using Godot;
 
 public partial class SpriteVisualPreviewRunner : Node
 {
-    private const string OutputDirectory = "res://.artifacts/test-reports/sprite-presentation/runtime-v1";
+    private const string OutputDirectory = "res://.artifacts/test-reports/pitch-layers/v2";
 
     public override void _Ready()
     {
@@ -43,7 +43,9 @@ public partial class SpriteVisualPreviewRunner : Node
             main.MatchView.PauseMatch();
             await CaptureAsync("moving-scenario.png");
             GD.Print($"PASS: visual sprite captures saved to {ProjectSettings.GlobalizePath(OutputDirectory)}");
-            GetTree().Quit(0);
+            RemoveChild(main);
+            main.QueueFree();
+            AddChild(new GoalOcclusionPreviewRunner());
         }
         catch (Exception exception)
         {

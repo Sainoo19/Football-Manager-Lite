@@ -1,13 +1,38 @@
-# Pixel pitch 2.5D — v1
+# Pixel pitch 2.5D — layered v2
 
-Generated using the built-in ImageGen tool. The exact prompt is in `generation-prompt.txt`.
+The live view now loads `pitch_ground_v2.png` (1024 × 512), containing only grass and painted markings.
+`tools/assets/PitchAssetGenerator` produces this PNG deterministically using `FootballPitchDimensions`
+and the same `PixelPitchLayout` projection used for player feet and the ball. Both halves are mirrored
+exactly, including integer pixels. The center circle, penalty boxes, goal areas, penalty spots/arcs and
+corner arcs use pitch dimensions in meters. Nearest filtering preserves the pixel style.
 
-`pitch_2_5d_v1.png` is a single environment image with transparent surroundings, intended as a visual prototype for the football game. It combines the grass, field markings, goals, corner flags, walkway and fence. It is not a tile atlas or a set of independently sortable sprites.
+The goals are independent 128 × 128 transparent sprites in `goals/`:
 
-The live view uses nearest texture filtering. The projection aligns normalized match coordinates with the
-painted touchlines and center spot; the generated markings are an artistic approximation of regulation
-dimensions. Separate goals and foreground fence into sprites when player occlusion is needed.
+- `goal_rear.png`: rear support frame.
+- `goal_net.png`: translucent net threads with transparent holes.
+- `goal_front.png`: the mouth posts and crossbar.
 
-The live match view uses this asset by default, with nearest filtering and a calibrated projection in
-`PixelPitchLayout`. The “Sân pixel 2.5D” control switches back to the procedural pitch for comparison.
-The pitch remains visible before a match starts. Player markers and the ball retain their existing appearance.
+The right goal mirrors the same assets; no separately generated approximation is used. `MatchGoalRenderer`
+places the layers at the mathematical goal line and scales them with the ground image. The actors share
+a Y-sort root. Explicit depth indices distinguish the goal volume, the front of the mouth and the space
+behind the net, because Y alone does not distinguish these positions at the side of a pitch. Ball height
+uses the same vertical scale as the 2.44 m crossbar, so balls above it are not hidden by the net. Circle
+markers also participate in this ordering when player sprites are disabled. This is rendering only;
+simulation positions, boundaries and collision/rule behavior are unchanged.
+
+Flags, fences and walkways are omitted from this clean ground. Future props should be separate nodes.
+
+Regenerate after editing the source geometry:
+
+```sh
+dotnet build FootballManager.sln --no-restore
+/Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path . res://tools/assets/PitchAssetGenerator.tscn
+/Applications/Godot_mono.app/Contents/MacOS/Godot --headless --path . --editor --import --quit
+```
+
+Validate with `res://tests/DotNetTestRunner.tscn -- --suite=pitch-presentation`. The GPU capture helper
+`res://tests/support/SpriteVisualPreviewRunner.tscn -- --capture` saves real match screenshots and four
+goal occlusion examples under the ignored `.artifacts/test-reports/pitch-layers/v2/` directory.
+
+`pitch_2_5d_v1.png` remains as the original ImageGen concept, with the prompt in `generation-prompt.txt`.
+It contains baked goals, flags and fencing and is no longer used by the live match view.

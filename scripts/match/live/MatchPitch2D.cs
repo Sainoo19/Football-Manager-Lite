@@ -83,9 +83,14 @@ public partial class MatchPitch2D : Control
     {
         _pixelPitchTexture = GD.Load<Texture2D>(PixelPitchLayout.TexturePath);
         TextureFilter = TextureFilterEnum.Nearest;
-        _spriteRenderer = new MatchSpriteRenderer { Name = "MatchSprites", Visible = IsSpriteDisplayEnabled };
+        Node2D presentation = new() { Name = "PitchActors", YSortEnabled = true };
+        AddChild(presentation);
+        _goalRenderer = new MatchGoalRenderer { Name = "Goals" };
+        _goalRenderer.Initialize();
+        presentation.AddChild(_goalRenderer);
+        _spriteRenderer = new MatchSpriteRenderer { Name = "MatchSprites", Visible = Simulation is not null };
         _spriteRenderer.Initialize(new MatchSpriteAtlas());
-        AddChild(_spriteRenderer);
+        presentation.AddChild(_spriteRenderer);
         ResetSpritePresentation();
         _engine.ActionChanged += HandleActionChanged;
         _engine.LiveMatchEvent += HandleLiveMatchEvent;

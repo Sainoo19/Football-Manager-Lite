@@ -16,9 +16,18 @@ public partial class MatchPitch2D
             DrawProceduralPitch(field);
         }
 
+        if (_goalRenderer is not null)
+        {
+            _goalRenderer.Visible = IsPixelPitchEnabled;
+            if (IsPixelPitchEnabled)
+            {
+                _goalRenderer.UpdateLayout(_pixelPitchRect);
+            }
+        }
+
         if (_spriteRenderer is not null)
         {
-            _spriteRenderer.Visible = IsSpriteDisplayEnabled && Simulation is not null;
+            _spriteRenderer.Visible = Simulation is not null;
         }
         if (Simulation is null)
         {
@@ -114,13 +123,19 @@ public partial class MatchPitch2D
             Color color = isHome ? HomeKit.Shirt : AwayKit.Shirt;
             if (PlayerRoles[playerId] == "GK")
                 color = isHome ? new Color("f1c75b") : new Color("ec9f45");
-            DrawCircle(point + new Vector2(1.5f, 2), playerRadius + 0.5f, new Color(0, 0, 0, 0.32f));
-            DrawCircle(point, playerRadius, color);
-            DrawArc(point, playerRadius, 0, Mathf.Tau, 24, new Color(1, 1, 1, 0.84f), 1.5f);
             PlayerNumbers.TryGetValue(playerId, out int squadNumber);
             string markerText = MarkerLabelMode == PlayerMarkerLabelMode.Position
                 ? PlayerRoles[playerId]
                 : squadNumber > 0 ? squadNumber.ToString() : "?";
+            if (_spriteRenderer is not null)
+            {
+                _spriteRenderer.SetPlayerMarkerVisual(playerId, point, playerRadius * 2f, color,
+                    markerText, ActorDepth(renderedPosition, point));
+                continue;
+            }
+            DrawCircle(point + new Vector2(1.5f, 2), playerRadius + 0.5f, new Color(0, 0, 0, 0.32f));
+            DrawCircle(point, playerRadius, color);
+            DrawArc(point, playerRadius, 0, Mathf.Tau, 24, new Color(1, 1, 1, 0.84f), 1.5f);
             DrawString(
                 ThemeDB.FallbackFont,
                 new Vector2(point.X - playerRadius, point.Y + fontSize * 0.34f),
@@ -146,11 +161,19 @@ public partial class MatchPitch2D
         float pixelsPerPitchMeter = field.Size.Y / FootballPitchDimensions.WidthMeters;
         float liftPixels = BallVisualHeight * pixelsPerPitchMeter * 0.72f;
         Vector2 ballPoint = groundPoint - new Vector2(liftPixels * 0.32f, liftPixels * 0.72f);
-        float ballRadius = 4.5f + Mathf.Min(liftPixels * 0.10f, 1.4f);
-        DrawCircle(groundPoint + new Vector2(1.5f, 2f), 5, new Color(0, 0, 0, 0.38f));
-        if (IsSpriteDisplayEnabled && _spriteRenderer is not null)
+        if (IsPixelPitchEnabled)
         {
-            _spriteRenderer.SetBallVisual(groundPoint, ballPoint, ballRadius * 2f, true);
+            ballPoint = PixelGoalLayout.BallAirPoint(groundPoint, BallVisualHeight, _pixelPitchRect);
+        }
+        float ballRadius = 4.5f + Mathf.Min(liftPixels * 0.10f, 1.4f);
+        if (!IsSpriteDisplayEnabled || _spriteRenderer is null)
+        {
+            DrawCircle(groundPoint + new Vector2(1.5f, 2f), 5, new Color(0, 0, 0, 0.38f));
+        }
+        if (_spriteRenderer is not null)
+        {
+            _spriteRenderer.SetBallVisual(groundPoint, ballPoint, ballRadius * 2f, true,
+                ActorDepth(BallPosition, groundPoint, BallVisualHeight, true), IsSpriteDisplayEnabled);
             return;
         }
         DrawCircle(ballPoint, ballRadius, BallColor);
@@ -179,8 +202,19 @@ public partial class MatchPitch2D
             DrawCircle(Vector2.Zero, height * 0.24f, new Color(0f, 0f, 0f, 0.32f));
             DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
             PlayerNumbers.TryGetValue(playerId, out int number);
-            _spriteRenderer.SetPlayerVisual(playerId, point, height, kit, MarkerLabelMode, role, number);
+            _spriteRenderer.SetPlayerVisual(playerId, point, height, kit, MarkerLabelMode, role, number,
+                ActorDepth(renderedPosition, point));
         }
+    }
+
+    private int ActorDepth(Vector2 normalized, Vector2 groundPoint, float height = 0f, bool isBall = false)
+    {
+        if (IsPixelPitchEnabled && _goalRenderer is not null)
+        {
+            return _goalRenderer.ActorDepth(normalized, groundPoint, height, isBall);
+        }
+        return isBall && height > 0.8f ? 2100
+            : Mathf.Clamp(Mathf.RoundToInt(groundPoint.Y) + 100 + (isBall ? 5 : 0), 1, 1505);
     }
 
     private void DrawEllipticalArc(Vector2 center, Vector2 radius, float start, float end, Color color)

@@ -13,6 +13,7 @@ public partial class DotNetTestRunner : Node
             {
                 PixelPitchPresentationTests.Run();
                 MatchSpritePresentationTests.Run();
+                GoalLayerPresentationTests.Run();
                 TestPitchScaleAndMovementSpeed();
                 TestPitchPauseAndReset();
                 GetTree().Quit(0);
@@ -58,6 +59,7 @@ public partial class DotNetTestRunner : Node
             TestPitchScaleAndMovementSpeed();
             PixelPitchPresentationTests.Run();
             MatchSpritePresentationTests.Run();
+            GoalLayerPresentationTests.Run();
             TestOffsideRule();
             TestPassTrajectoryAndNearestContest();
             TestDefensiveBlockSpacingAndRollingBall();
